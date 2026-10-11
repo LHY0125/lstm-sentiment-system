@@ -1,0 +1,151 @@
+# 基于 LSTM 的网络评论情感分类系统
+
+河南理工大学计算机学院《神经网络与深度学习》课程设计 · 选题(3)
+指导教师：侯蓓蓓
+
+基于 LSTM 的中文评论情感二分类系统：PyTorch 训练模型，Flask 提供推理与
+可解释性接口，React 前端提供单条分析、批量分析与参数调节。
+
+## 系统组成
+
+| 层 | 目录 | 职责 |
+|----|------|------|
+| 数据层 | `backend/senti/data.py` | 语料下载、jieba 分词、词表构建、索引编码 |
+| 模型层 | `backend/senti/model.py` | Embedding + LSTM + Linear |
+| 训练层 | `backend/senti/train.py` | 训练循环、网格实验、产物落盘 |
+| 推理层 | `backend/senti/infer.py` | 单条/批量预测、遮挡法逐词贡献 |
+| 接口层 | `backend/senti/api.py` | Flask REST 接口 |
+| 前端 | `frontend/` | React + Vite + Tailwind |
+
+训练期离线产出「模型 + 词表 + 元数据」三类产物（`backend/artifacts/`，不入库）；
+推理期只消费产物、不做训练，因此换模型等价于换一个 `.pt` 文件。
+超参数集中在 `backend/senti/config.py`，训练与推理代码里不出现字面量。
+
+## 数据集
+
+ChnSentiCorp（谭松波中文酒店评论语料），来源与划分见 `backend/senti/data.py`。
+
+| 项 | 值 |
+|----|----|
+| 训练集 | 9600 条 |
+| 测试集 | 1200 条 |
+| 词表大小 | 19270（jieba 分词后按词频取前 20000，出现次数 < 2 的记为 `<unk>`） |
+| 截断长度 MAX_LEN | 150 词 |
+
+训练集内部再切 10% 作验证集，**只用于选最优轮次与模型排序**；测试集只用于报告最终指标。
+
+## 环境
+
+| 组件 | 版本 |
+|------|------|
+| Python | 3.13.13（项目级 `.venv`，uv 创建） |
+| PyTorch | 2.12.0+cu132（本机 CUDA 可用） |
+| Flask / flask-cors | 3.1.3 / 6.0.5 |
+| Node | v24.19.0 |
+| pnpm | 11.7.0 |
+| React / Vite / Tailwind | 19.3.0 / 8.3.4 / 4.3.3 |
+| Biome（前端 lint + 格式化） | 2.5.15 |
+
+**不依赖 torchvision**（本项目无图像任务）。
+
+### 重新搭建环境
+
+```powershell
+uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
+uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
+uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
+cd frontend; pnpm install
+```
+
+> `pyarrow` 用于读取原生划分的 parquet 语料（已并入上面这条安装命令）。
+
+## 运行
+
+```powershell
+# 1. 下载语料
+cd backend; ..\.venv\Scripts\python.exe -c "from senti import data; data.download()"
+
+# 2. 数据管线体检（必须先通过）
+..\.venv\Scripts\python.exe -m senti.train --overfit-test
+
+# 3. 训练 6 组模型（本机实测约 94 秒，见下方实测表）
+..\.venv\Scripts\python.exe -m senti.train
+
+# 4. 启动后端
+..\.venv\Scripts\python.exe run_api.py
+
+# 5. 前端（开发模式，可选）
+cd ..\frontend; pnpm dev
+```
+
+只训一组时：`..\.venv\Scripts\python.exe -m senti.train --config 2 128`（层数 隐藏维度）。
+
+### 演示（单端口）
+
+前端构建一次后，Flask 会顺带托管 `frontend/dist/`，演示时只需一个进程：
+
+```powershell
+cd frontend; pnpm build
+cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 http://127.0.0.1:5000/
+```
+
+该托管路由**只在 `frontend/dist/` 存在时注册**，未构建时接口层的行为与只跑后端时完全一致。
+`/api/` 下的路径不会被这条兜底路由吞掉：路径不存在仍是 JSON 404，方法不对仍是 JSON 405（带 `Allow`）。
+
+开发模式（`pnpm dev`）下前端在 5173，`/api` 由 Vite 代理转发到 5000，浏览器看到的是同源请求，
+因此**开发期与单端口部署期都不需要 CORS**；后端只对 `/api/*` 放开了白名单里的两个开发源。
+
+## 实测结果
+
+> 本表由 `backend/artifacts/meta.json` 生成，与代码实际跑出的一致。
+> 顺序即 `GET /api/models` 的返回顺序（按**验证**准确率降序），前端默认选中第一行。
+
+| 模型 | 层数 | 隐藏维度 | 参数量 | 验证准确率 | 测试准确率 | 训练耗时（本机实测） |
+|------|------|---------|--------|-----------|-----------|--------------------|
+| lstm_l1_h256 | 1 | 256 | 2,862,338 | 89.90% | **89.50%** | 21.3 s |
+| lstm_l1_h64 | 1 | 64 | 2,516,354 | 89.27% | 88.33% | 5.5 s |
+| lstm_l2_h64 | 2 | 64 | 2,549,634 | 89.06% | 89.17% | 7.6 s |
+| lstm_l1_h128 | 1 | 128 | 2,598,914 | 88.85% | 88.42% | 8.5 s |
+| lstm_l2_h128 | 2 | 128 | 2,731,010 | 88.54% | 88.25% | 14.2 s |
+| lstm_l2_h256 | 2 | 256 | 3,388,674 | 88.54% | 89.25% | 37.1 s |
+
+**数据集**：ChnSentiCorp，训练 9600 条 / 测试 1200 条，词表 19270
+**最优模型**：lstm_l1_h256，测试准确率 **89.50%**（题目门槛 85%，余量约 4.5 个百分点）
+
+几点说明：
+
+- **排序与默认选中依据验证准确率，不依据测试准确率。** 对 6 个测试准确率取极大值会被系统性高估
+  （winner's curse）：那个数字已经被「挑最好」这个过程本身筛过一遍。故表格按验证准确率降序，
+  测试准确率照常列出但不参与任何排序。
+- **「训练耗时」是本机墙钟实测值**，不是模型的固有属性——换机器、换批次大小都会变，
+  不应被当成可复现的指标引用。
+- 6 个模型的测试准确率只差约 1.3 个百分点，都远高于门槛；因此演示时切换模型**看不出明显的准确率差异**。
+  单个例句的判定差异会很明显（不同模型对同一句可能给出相反的标签），那是模型权重不同，不是缺陷。
+- 前端「正面示例」这句在默认模型（lstm_l1_h256）下被判为**消极**（积极概率 0.4234），换 `lstm_l2_h64`
+  则为积极（0.9955）。示例句本身不含贬义，这是模型在该句式上的真实表现，故如实记录：
+
+  | 模型 | 正面示例 | 负面示例 | 中性示例 |
+  |------|---------|---------|---------|
+  | lstm_l1_h256 | 0.4234 消极 | 0.0001 消极 | 0.0382 消极 |
+  | lstm_l1_h64 | 0.8955 积极 | 0.0026 消极 | 0.1958 消极 |
+  | lstm_l2_h64 | 0.9955 积极 | 0.0005 消极 | 0.0038 消极 |
+  | lstm_l1_h128 | 0.7503 积极 | 0.0010 消极 | 0.5851 积极 |
+  | lstm_l2_h128 | 0.0531 消极 | 0.0036 消极 | 0.0022 消极 |
+  | lstm_l2_h256 | 0.6637 积极 | 0.0057 消极 | 0.3711 消极 |
+
+  （上表为「积极概率 / 阈值 0.5 下的标签」，由 `POST /api/predict` 实测）
+
+## 测试
+
+```powershell
+cd backend; ..\.venv\Scripts\python.exe -m pytest -q      # 89 passed
+cd ..\frontend; pnpm typecheck; pnpm lint; pnpm build
+```
+
+后端测试覆盖数据层、模型层、训练层、推理层与接口契约（含 5 条路由的成功/失败路径与错误信封）；
+前端本轮以 `typecheck` + `lint` + `build` 与浏览器人工走查验收，未引入测试运行器。
+
+## 设计文档与实现计划
+
+- 设计：`docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`
+- 计划：`docs/superpowers/plans/2026-10-11-lstm-sentiment-system.md`

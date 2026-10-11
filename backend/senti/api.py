@@ -4,9 +4,9 @@
 薄层——只做参数校验、调用推理层、序列化响应，不含任何业务逻辑。
 """
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
 from senti import config, infer
 
@@ -95,9 +95,23 @@ def create_app() -> Flask:
     test_client，不必起服务、也不会在不同测试之间共享路由状态。
     """
     app = Flask(__name__)
-    # 开发期前端经 Vite 代理访问，本不需要 CORS；
-    # 保留它以便直接用浏览器或 curl 调试。
-    CORS(app)
+    # 跨源只对 /api/* 放开，且只放开开发期真正会用到的那两个源。
+    #
+    # 单端口部署（Flask 托管 dist/，见本函数末尾）下前端与接口**同源**，
+    # 一个字节的 CORS 都不需要；这一段是给「不经 Vite 代理、直接用浏览器或 curl 调接口」
+    # 的调试场景留的。开发期的正常路径是 `pnpm dev`：浏览器发的是同源请求，
+    # 由 vite.config.ts 的 server.proxy 转发到 5000，同样用不到这些头。
+    #
+    # 之所以不写 origins="*"：服务当前绑在 127.0.0.1，外部本来就够不着，通配符此刻
+    # 确实无害；但演示时想用手机看页面，把 host 改成 "0.0.0.0" 只需要动一行——
+    # 那一行之后，通配符意味着**任意网页**都能读走这个接口的响应。
+    # 默认拒绝、按需列举的代价是多写一行白名单，比事后补漏便宜。
+    CORS(
+        app,
+        resources={
+            r"/api/*": {"origins": ["http://127.0.0.1:5173", "http://localhost:5173"]}
+        },
+    )
 
     @app.get("/api/health")
     def health() -> Response:
@@ -221,5 +235,51 @@ def create_app() -> Flask:
         也会得到 JSON 而不是 HTML，前端的单一错误路径得以成立。
         """
         return _error(f"推理失败：{type(err).__name__}", 500)
+
+    # ------------------------------------------------------- 前端静态托管
+    # 若前端已构建，则由 Flask 托管 dist/，实现单端口单进程运行；
+    # 演示时不必同时开着 Vite 与 Flask 两个进程，也就没有「代理配错了」这类现场故障。
+    # 用 dist 是否存在来开关：未构建时不注册任何兜底路由，接口层的行为与 Task 7 完全一致。
+    dist = config.PROJECT_ROOT / "frontend" / "dist"
+    if dist.exists():
+
+        def _api_path_methods(subpath: str) -> list[str]:
+            """`/api/<subpath>` 在路由表里注册过的方法（没有则空列表）。"""
+            return sorted(
+                method
+                for rule in app.url_map.iter_rules()
+                if rule.rule == f"/{subpath}"
+                for method in (rule.methods or ())
+            )
+
+        @app.get("/")
+        @app.get("/<path:subpath>")
+        def spa(subpath: str = "") -> Response:
+            """托管构建产物；非静态资源的路径一律回退到 index.html（前端路由接管）。"""
+            # 关键：SPA 回退**绝不能**吞掉 /api/ 下的路径。
+            # 路由匹配优先于错误处理器，而这条兜底规则对**任意** GET 路径都成立，
+            # 于是只要放行，/api/nope 会拿到 200 + 一份 index.html、
+            # GET /api/predict 会拿到 200 而不是 405——静默废掉 Task 7 定下的 JSON 错误契约。
+            # 更坏的是它**只在 dist/ 存在时才发作**，也就是恰好演示的那一刻。
+            if subpath.startswith("api/"):
+                # 这里比「一律 abort(404)」多分一层：路径在路由表里注册过、只是方法不对时，
+                # 必须回 405 并带上 RFC 9110 要求的 Allow，与没有兜底路由时逐字节一致。
+                # 少了这一层，`GET /api/predict` 会从 405 退化成 404，
+                # 而 404 与 405 的区别正是「路径写错了」与「方法写错了」的区别——
+                # 前端 typo 掉一个 method 时，这是唯一能指对方向的信号。
+                # （实测：不分层时 backend/tests/test_api.py::test_wrong_method_returns_405_json 失败。）
+                allowed = _api_path_methods(subpath)
+                if allowed:
+                    raise MethodNotAllowed(valid_methods=allowed)
+                abort(404)
+
+            target = dist / subpath
+            if subpath and target.is_file():
+                # 交给 send_from_directory 而不是自己拼路径发出去：它对 `..` 之类的
+                # 路径穿越做了 safe_join 校验，越界的请求在那里变成 404 而不是读到根目录外的文件。
+                return send_from_directory(dist, subpath)
+            return send_from_directory(dist, "index.html")
+
+        print(f"已启用前端静态托管：{dist}")
 
     return app
