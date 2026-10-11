@@ -12,10 +12,15 @@
 2026-10-11 的探测结论：
     - huggingface.co 不可达，但 hf-mirror.com 可用，其 /api/datasets/<repo>
       能列出真实文件名（siblings），因此不必猜路径。
-    - ChnSentiCorp 的「原生 train/test 划分」只以 parquet / arrow 形式存在，
-      读取需要 pyarrow（本环境未安装）；带划分的 CSV 不存在。
-    - 唯一存在的 CSV 是单一未划分文件 ChnSentiCorp_htl_all.csv（7 766 条）。
-      故 download() 固化为该 CSV —— 依赖零新增，划分改走固定种子 9:1 重切。
+    - ChnSentiCorp 的「原生 train/test 划分」只以 parquet / arrow 形式存在；
+      不存在带划分的 CSV。唯一存在的 CSV 是单一未划分文件
+      ChnSentiCorp_htl_all.csv（7 766 条，酒店域子集，积极占比 0.685）。
+    - 按 spec §8「沿用语料自带 train/test 划分」，最终选定 lansinuote/ChnSentiCorp
+      的 parquet（train 9 600 / test 1 200，积极占比 0.500 / 0.507），
+      并为此新增依赖 pyarrow。lansinuote、liming751218、liqqqqy 三个仓库的同名
+      parquet 逐字节相同，故互为回退镜像。
+    - 语料自带的 validation 划分不使用：按 spec §8，验证集由训练集按
+      config.VAL_RATIO 现切（Task 5）。
 """
 
 import sys
@@ -48,12 +53,20 @@ CANDIDATES: list[tuple[str, str]] = [
      "https://hf-mirror.com/datasets/seamew/ChnSentiCorp/resolve/main/data/test-00000-of-00001.parquet"),
     ("HF镜像 seamew/ChnSentiCorp validation",
      "https://hf-mirror.com/datasets/seamew/ChnSentiCorp/resolve/main/data/validation-00000-of-00001.parquet"),
-    # ---- 最终选定的两个源。放进来是为了「重跑本脚本即可复现定源结论」，----
-    # ---- 否则脚本只记录了一堆 404 的猜测路径，看不出到底哪个源成功了。  ----
-    ("【选定】HF镜像 dirtycomputer/ChnSentiCorp_htl_all CSV（2 904 858 字节）",
+    # ---- 最终选定的源（Ruling R3a：用原生划分，故取 parquet）。 ----
+    # ---- 放进来是为了「重跑本脚本即可复现定源结论」，否则脚本只记录了 ----
+    # ---- 一堆 404 的猜测路径，看不出到底哪个源成功了。               ----
+    ("【选定】lansinuote train（2 156 438 字节，9 600 条）",
+     "https://hf-mirror.com/datasets/lansinuote/ChnSentiCorp/resolve/main/data/train-00000-of-00001-02f200ca5f2a7868.parquet"),
+    ("【选定】lansinuote test（275 253 字节，1 200 条）",
+     "https://hf-mirror.com/datasets/lansinuote/ChnSentiCorp/resolve/main/data/test-00000-of-00001-5372924f059fe767.parquet"),
+    ("【选定·备用】liming751218 train（与 lansinuote 逐字节相同）",
+     "https://hf-mirror.com/datasets/liming751218/ChnSentiCorp/resolve/main/data/train-00000-of-00001-02f200ca5f2a7868.parquet"),
+    ("【选定·备用】liming751218 test（与 lansinuote 逐字节相同）",
+     "https://hf-mirror.com/datasets/liming751218/ChnSentiCorp/resolve/main/data/test-00000-of-00001-5372924f059fe767.parquet"),
+    # ---- 备选的单一未划分 CSV（R3a 之前选的源；保留以备回溯对比） ----
+    ("【备选·未采用】dirtycomputer ChnSentiCorp_htl_all CSV（2 904 858 字节）",
      "https://hf-mirror.com/datasets/dirtycomputer/ChnSentiCorp_htl_all/resolve/main/ChnSentiCorp_htl_all.csv"),
-    ("【选定·备用】GitHub raw SophonPlus/ChineseNlpCorpus 同一文件",
-     "https://raw.githubusercontent.com/SophonPlus/ChineseNlpCorpus/master/datasets/ChnSentiCorp_htl_all/ChnSentiCorp_htl_all.csv"),
 ]
 
 
