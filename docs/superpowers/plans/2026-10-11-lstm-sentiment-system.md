@@ -1559,7 +1559,7 @@ git commit -m "feat(train): 训练循环、网格实验与产物落盘"
     - `batch_predict(texts: list[str], max_len: int = config.MAX_LEN) -> list[dict]`
       → `[{text, prob_pos, prob_neg}]`
     - `explain(text: str, max_len: int = config.MAX_LEN) -> dict`
-      → `{label, prob_pos, prob_neg, contributions: [{token, delta}]}`
+      → `{label, prob_pos, prob_neg, tokens, contributions: [{token, delta}]}`
   - `infer.get_predictor(model_id: str) -> Predictor`（带缓存）
   - `infer.DEFAULT_THRESHOLD = 0.5`
 
@@ -1908,7 +1908,7 @@ git commit -m "feat(infer): 单条/批量预测与遮挡法逐词贡献"
 | GET | `/api/health` | — | `{"status": "ok"}` |
 | GET | `/api/models` | — | `[ModelInfo]` |
 | POST | `/api/predict` | `{text, model_id, max_len?}` | `{label, prob_pos, prob_neg, tokens}` |
-| POST | `/api/explain` | `{text, model_id, max_len?}` | `{label, prob_pos, prob_neg, contributions}` |
+| POST | `/api/explain` | `{text, model_id, max_len?}` | `{label, prob_pos, prob_neg, tokens, contributions}` |
 | POST | `/api/batch` | `{texts, model_id, max_len?}` | `[{text, prob_pos, prob_neg}]` |
 
 错误响应统一为 `{"error": "<中文说明>"}` + 400/404/500。
