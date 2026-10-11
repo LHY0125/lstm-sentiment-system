@@ -99,26 +99,22 @@ def test_predict_too_long_returns_400(client, best_model_id):
 
 
 def test_predict_unknown_model_returns_404(client):
-    r = client.post("/api/predict", json={"text": "很好", "model_id": "不存在"})
-    assert r.status_code == 404
+    """文本合法、模型不存在 → 404（而不是 400）。
 
-
-def test_predict_valid_text_unknown_model_reports_404_not_400(client):
-    """校验顺序：text 合法时，缺模型必须报 404 而不是 400。
-
-    参数校验在模型校验之前，故「文本合法 + 模型不存在」必须落到 404。
+    这条同时钉住了**校验顺序**：参数校验在模型校验之前。
     顺序反了会把「模型不存在」伪装成参数错误，前端无从提示用户换模型。
+    两个字段都缺的情形由下一条覆盖（应当报 400 而非 404）。
     """
     r = client.post("/api/predict", json={"text": "很好", "model_id": "不存在"})
-    assert r.status_code == 404, r.get_json()
+    assert r.status_code == 404
     assert "error" in r.get_json()
 
 
 def test_predict_missing_both_reports_400_not_404(client):
-    """校验顺序：两个字段都缺时，报 400（参数错误）而非 404。
+    """校验顺序：两个字段都缺时报 400（参数错误）而非 404。
 
-    顺序在此是有意为之——先报「你少了 text」，因为这是用户能立刻修好的问题；
-    报 404 会把人引向「模型列表坏了」这个错误方向。
+    「你少了 text」是用户能立刻修好的问题；报 404 会把人引向
+    「模型列表坏了」这个错误方向。
     """
     r = client.post("/api/predict", json={})
     assert r.status_code == 400, r.get_json()
@@ -154,6 +150,25 @@ def test_batch_rejects_empty_list(client, best_model_id):
 def test_batch_rejects_oversized_payload(client, best_model_id):
     """单次批量上限，防止一次请求打爆显存。"""
     r = client.post("/api/batch", json={"texts": ["好"] * 1001, "model_id": best_model_id})
+    assert r.status_code == 400
+
+
+def test_batch_rejects_blank_item(client, best_model_id):
+    """数组里混进空白串同样要挡下。
+
+    只校验「是不是数组」不够：一条空串会让分词结果为空，
+    推理层得靠 lengths 兜底成 1 才不越界——那是防御，不该当正常路径用。
+    """
+    r = client.post("/api/batch", json={"texts": ["好", "   "], "model_id": best_model_id})
+    assert r.status_code == 400
+
+
+def test_batch_rejects_overlong_item(client, best_model_id):
+    """逐条长度上限与单条接口一致，不能靠批量绕过 MAX_TEXT_CHARS。"""
+    r = client.post(
+        "/api/batch",
+        json={"texts": ["好", "好" * (config.MAX_TEXT_CHARS + 1)], "model_id": best_model_id},
+    )
     assert r.status_code == 400
 
 
