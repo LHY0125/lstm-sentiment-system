@@ -30,6 +30,10 @@
   使报告的头条数字失去无偏性。
 - **路径定位**：脚本用 `Path(__file__)` 定位项目根，不依赖当前工作目录
 - **超参数**：全部集中在 `backend/senti/config.py`，训练/推理代码内不得出现字面量
+- **React 列表 key 不能用数组下标**：Biome 的 `suspicious/noArrayIndexKey`（`recommended` 下默认开，
+  而 `frontend/biome.json` 用 `recommended: true`）会判为 error → `pnpm lint` 退出码 1。
+  做法：先把数组摊成带**显式身份字段**的渲染单元（如 `{ id, ... }`）再 `key={unit.id}`。
+  不要写 `key={\`${x}-${i}\`}`，也不要为此引入 `biome-ignore`（本仓库目前零处豁免，不要开这个头）。
 - **重要**：先读 `docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`，
   它是本计划的设计依据。设计与计划冲突时以设计为准并回报。
 
@@ -2925,6 +2929,11 @@ git commit -m "feat(frontend): 概率条与单条分析面板"
 - ⚠️ **两个输入缺一不可**：`tokens` 是完整渲染骨架，`contributions` 只覆盖前
   `CONTRIB_MAX_TOKENS`（100）个位置。只按 `contributions` 渲染会把长句截断到前 100 词，
   并把「未分析」静默渲染成「中性色 = 测得零贡献」——那是在销毁信息。
+- ⚠️ **本节下方代码块中的 `key={\`${token}-${i}\`}` 过不了 `pnpm lint`**（见全局约束的
+  `noArrayIndexKey` 条目）。已交付实现改为先把 `tokens` 摊成带显式 `id` 的渲染单元再 key 之；
+  以**已提交的 `TokenHighlight.tsx` 为准**，本节代码块仅示意结构。
+- ⚠️ **强度要按「词位」算，不按 token 建表**：`Map<token, 强度>` 在同一词重复出现时只留最后一次，
+  会把两个测得不同的 `|delta|` 画成同一深度，与图例承诺的「颜色越深影响越大」矛盾。
 
 - [ ] **Step 1: 实现完整版**
 
