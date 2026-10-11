@@ -3166,7 +3166,7 @@ export function ResultTable({ items, threshold }: Props) {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-600">
-                    {it.prob_pos.toFixed(4)}
+                    {row.prob_pos.toFixed(4)}
                   </td>
                 </tr>
               );
