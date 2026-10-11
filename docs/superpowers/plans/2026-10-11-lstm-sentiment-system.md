@@ -3421,7 +3421,14 @@ createRoot(rootElement).render(
         @app.get("/")
         @app.get("/<path:subpath>")
         def spa(subpath: str = ""):
-            from flask import send_from_directory
+            from flask import abort, send_from_directory
+
+            # 关键：SPA 回退**不能**吞掉 /api 下的路径。
+            # 路由匹配优先于错误处理器，所以若放行，GET /api/nope 会返回 200 + index.html、
+            # GET /api/predict 会返回 200 而不是 405 —— 静默废掉 JSON 错误契约，
+            # 且只在 dist/ 存在（即演示）时才发生。交给 abort 走 404 处理器。
+            if subpath.startswith("api/"):
+                abort(404)
 
             target = dist / subpath
             if subpath and target.is_file():
