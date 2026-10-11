@@ -14,6 +14,11 @@ from senti import config, infer
 # config 里住的是数据/模型/推理的超参数。
 MAX_BATCH_SIZE = 1000
 
+# 请求里 max_len 的可接受上限。刻意远大于 config.MAX_LEN（默认为它）：
+# max_len 是前端可调的截断旋钮，允许试到比默认更长，但必须有天花板，
+# 否则一条 max_len=10**9 的请求会让词索引矩阵直接吃掉全部内存。
+MAX_LEN_LIMIT = 1000
+
 # 错误响应的统一形状：(JSON 体, HTTP 状态码)。
 ErrorResponse = tuple[Response, int]
 
@@ -70,7 +75,7 @@ def _max_len(payload: dict) -> int:
     value = payload.get("max_len")
     # bool 是 int 的子类，True 会通过 isinstance 检查——显式排除，
     # 否则 max_len=true 会被当成 max_len=1 这种谁也想不到的截断长度。
-    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 1000:
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_LEN_LIMIT:
         return value
     return config.MAX_LEN
 
