@@ -19,6 +19,9 @@ from senti import corpora
 # 这样续传、截断这些行为才有东西可测。
 CORPUS_BODY = b"label,review\n" + b"1,\xe5\xa5\xbd\xe5\x90\x83\n" * 20000
 HTML_PAGE = b"<!DOCTYPE html>\n<html><body>404 Not Found</body></html>\n"
+# 约 3.6 MB、跨 55 个数据块：用来模拟「每次连接只推进一块」的链路，块数刻意 >40，
+# 以便钉住 MAX_ATTEMPTS 不能退回那个不够用的旧值。
+BIG_BODY = b"label,review\n" + b"1,\xe5\xa5\xbd\xe5\x90\x83\n" * 400_000
 
 
 class _CorpusHandler(BaseHTTPRequestHandler):
@@ -43,10 +46,14 @@ class _CorpusHandler(BaseHTTPRequestHandler):
         s.setdefault("seen", []).append(self.headers.get("Range"))
         body = s.get("body", b"")
         rng = self.headers.get("Range")
+        use_range = bool(rng) and s.get("support_range", True)
+        start = int(rng.split("=", 1)[1].split("-", 1)[0]) if use_range else 0
 
-        if rng and s.get("support_range", True):
-            start = int(rng.split("=", 1)[1].split("-", 1)[0])
-            payload = body[start:]          # 注意：发出去的是**这一段**，不是整个 body
+        payload = body[start:]
+        if s.get("one_chunk"):
+            payload = payload[:corpora.CHUNK]   # 模拟「一次连接只推进一个数据块」的链路
+
+        if use_range:
             total = s.get("total")
             self.send_response(206)
             self.send_header(
@@ -55,7 +62,6 @@ class _CorpusHandler(BaseHTTPRequestHandler):
             )
             self.send_header("Content-Length", str(len(payload)))
         else:
-            payload = body
             self.send_response(200)
             if s.get("content_length") is not None:
                 self.send_header("Content-Length", str(s["content_length"]))
@@ -459,6 +465,33 @@ def test_download_one_does_not_retry_a_source_whose_content_is_unusable(serve, t
         corpora._download_one("waimai_10k", _file_spec(url), dest, corpora.CORPORA["waimai_10k"])
 
     assert len(script["seen"]) == 1           # 只请求了一次
+
+
+def test_download_one_survives_a_link_that_advances_one_chunk_at_a_time(serve, tmp_path):
+    """回归 Important-3：链路每次连接只推进一个数据块时，必须靠续传一路跑完。
+
+    这条同时钉住两件事，去掉任一件它都会红：
+      · 「有推进就重置停滞计数」——否则跑 3 次就被判为无进展而放弃；
+      · `MAX_ATTEMPTS` 足够大——旧值 40 下不来这个 55 块的语料。
+    构造上必须让服务端**声明完整长度**却只发一块，客户端才会判为「中断」而不是「下完了」。
+    """
+    url, script = serve
+    script["body"] = BIG_BODY
+    script["one_chunk"] = True
+    script["content_length"] = len(BIG_BODY)
+    dest = tmp_path / "x.csv"
+
+    corpora._download_one(
+        "waimai_10k",
+        corpora.FileSpec("x.csv", (url,), expected_bytes=len(BIG_BODY)),
+        dest,
+        corpora.CORPORA["waimai_10k"],
+    )
+
+    assert dest.read_bytes() == BIG_BODY
+    attempts = len(script["seen"])
+    assert attempts == -(-len(BIG_BODY) // corpora.CHUNK)     # 每次恰好推进一块
+    assert attempts > 40, "这条用例的意义就在于块数要多于旧上限，否则钉不住 MAX_ATTEMPTS"
 
 
 # ---------------------------------------------------------------- 端到端（本地目录）
