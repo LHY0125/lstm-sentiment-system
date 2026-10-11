@@ -70,7 +70,7 @@ git init
 ```powershell
 uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
 uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
-uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests
+uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
 ```
 
 - [ ] **Step 3: 验证环境**
@@ -3467,9 +3467,11 @@ ChnSentiCorp（谭松波中文酒店评论语料），来源与划分见 `backen
 ```powershell
 uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
 uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
-uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests
+uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
 cd frontend; pnpm install
 ```
+
+> `pyarrow` 由 Task 2 引入（读取原生划分的 parquet 语料），**已并入上面这条安装命令**。
 
 ## 运行
 
