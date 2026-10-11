@@ -91,7 +91,7 @@ export function extractTexts(csvText: string): CsvParse {
  *
  *  JS 的 `String.length` 数的是 UTF-16 码元，一个增补平面字符（emoji 等）算 **2**；
  *  Python 的 `len()` 数码点，同一个字符算 **1**。直接用 `.length` 会把「1001 个 emoji」
- *  这种输入判成 2001 字而在本地拒掉——方向是安全的（本地只会更严，后端那个 400 永远漏不出来），
+ *  这种输入量成 2002 字而在本地拒掉——方向是安全的（本地只会更严，后端那个 400 永远漏不出来），
  *  但那是**假拦截**：一句本来合法的输入被自己的前端挡住，用户无从理解。
  *  摊成数组再取长度就是码点数。 */
 const charCount = (text: string): number => [...text].length;
