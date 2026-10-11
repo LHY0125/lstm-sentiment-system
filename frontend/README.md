@@ -43,9 +43,7 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py
 | `pnpm lint:fix` | Biome 自动修复格式与可自动修的规则 |
 | `pnpm preview` | 仅预览 `dist/`（无代理，别用它验接口） |
 
-本项目的 linter 与格式化器都是 **Biome**（配置在 `biome.json`）。
-`package.json` 里的 `oxlint` 与 `.oxlintrc.json` 是 Vite 脚手架自带的残留，**本项目不使用**；
-`pnpm lint` 跑的只有 Biome。清理它们需要同步改 `pnpm-lock.yaml`，故暂留原样。
+本项目的 linter 与格式化器都是 **Biome**（配置在 `biome.json`）；`pnpm lint` 跑的只有 Biome。
 
 ## 目录结构
 
@@ -64,9 +62,7 @@ src/
 ├── types.ts               # 与后端契约一一对应的类型 + 全部跨边界常量
 ├── App.tsx                # 组装：页签、模型选择、设置与两个面板
 ├── main.tsx               # 入口：挂载 #root，显式判空后渲染 <App />
-├── index.css              # Tailwind 入口 + 逐词贡献的三个色阶变量
-├── App.css                # Vite 脚手架残留样式（当前无组件引用），保留未删
-└── assets/                # 同上：脚手架的 hero.png / react.svg / vite.svg
+└── index.css              # Tailwind 入口 + 逐词贡献的三个色阶变量
 ```
 
 本文件只讲前端。整套系统的说明（系统组成、数据集、实测结果、重建环境的完整步骤）
