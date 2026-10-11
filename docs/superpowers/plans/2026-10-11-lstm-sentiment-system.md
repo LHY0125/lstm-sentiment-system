@@ -1821,12 +1821,14 @@ class Predictor:
 
         contributions = []
         for i, token in enumerate(tokens):
-            masked = list(tokens)
-            masked[i] = "<unk>"
-            after = self._probs_for_tokens(masked, max_len)
+            masked_ids = base_ids.copy()
+            masked_ids[0, i] = config.UNK_IDX
+            after = self._probs_for_ids(masked_ids, lengths)
             contributions.append({"token": token, "delta": after - base})
 
-        contributions.sort(key=lambda c: -abs(c["delta"]))
+        # 不排序：保持原句词序，与 predict 的 tokens 同序。
+        # 前端要同时渲染「原句高亮」与「Top-N 排序表」——
+        # 排序客户端零成本可做，而从乱序还原原句序不可能（jieba 在服务端）。
         return {
             "label": 1 if base >= DEFAULT_THRESHOLD else 0,
             "prob_pos": base,
