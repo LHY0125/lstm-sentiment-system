@@ -63,7 +63,7 @@
 | 后端框架 | Flask + flask-cors | 轻量；仅需 REST 接口，不需 FastAPI 的异步与自动文档 |
 | 数据读写 | pandas | 语料为 CSV/TSV；统计与导出方便 |
 | 绘图 | matplotlib | 沿课程实验惯例（含 `common/plot_font.py` 中文字体配置） |
-| 前端 | React 18 + Vite + TypeScript + Tailwind CSS | 与用户既有项目技术栈一致 |
+| 前端 | React 19 + Vite + TypeScript + Tailwind CSS v4 | 与用户既有项目技术栈一致；`pnpm create vite --template react-ts` 当前产出 React 19 |
 | 前端工具链 | pnpm + Biome | 同上 |
 | 测试 | pytest | 仅覆盖纯函数与接口契约（见第 10 节） |
 
