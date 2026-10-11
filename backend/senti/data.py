@@ -4,8 +4,13 @@
 对外只暴露「文本 → 张量」所需的能力，不感知模型与训练。
 """
 
+import json
+import re
+from collections import Counter
 from pathlib import Path
 
+import jieba
+import numpy as np
 import pyarrow.parquet as pq
 import requests
 
@@ -215,3 +220,83 @@ def load_split() -> tuple[list[str], list[int], list[str], list[int]]:
     test_labels = [y for _, y in test_rows]
     print(f"语料载入：训练 {len(train_texts)} 条 / 测试 {len(test_texts)} 条")
     return train_texts, train_labels, test_texts, test_labels
+
+
+# ---------------------------------------------------------------- 分词
+
+# 纯标点/空白词判定：整体由非单词字符构成即为纯标点。
+# Python 3 的 re 默认 Unicode 模式，汉字属于 \w，故中文词不会被误判。
+_PUNCT_ONLY_RE = re.compile(r"^[\W_]+$", re.UNICODE)
+
+
+def tokenize(text: str) -> list[str]:
+    """jieba 分词并丢弃纯标点/空白词。
+
+    丢弃标点是有意的：标点对情感极性的判别贡献极低，
+    却会占据词表容量并稀释 <unk> 的统计。
+    """
+    return [w for w in jieba.lcut(text) if not _PUNCT_ONLY_RE.match(w)]
+
+
+# ---------------------------------------------------------------- 词表
+
+
+def build_vocab(texts: list[str]) -> dict[str, int]:
+    """仅用训练集文本构建词表。
+
+    只统计训练集是硬性要求：用全部数据建表会把测试集词频泄漏进模型。
+
+    索引分配：0=<pad>，1=<unk>，实词从 2 开始。
+    """
+    counter: Counter[str] = Counter()
+    for text in texts:
+        counter.update(tokenize(text))
+
+    # 先按词频取前 MAX_VOCAB 个，再滤掉低频词
+    words = [w for w, c in counter.most_common(config.MAX_VOCAB) if c >= config.MIN_FREQ]
+    vocab = {w: i + 2 for i, w in enumerate(words)}
+    print(f"词表大小：{len(vocab)}（原始不同词数 {len(counter)}）")
+    return vocab
+
+
+def save_vocab(word2idx: dict[str, int]) -> Path:
+    """词表写盘为 JSON。必须与 checkpoint 成对保存，否则推理时静默错位。"""
+    config.ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    config.VOCAB_PATH.write_text(
+        json.dumps(word2idx, ensure_ascii=False, indent=0), encoding="utf-8"
+    )
+    print(f"词表已保存：{config.VOCAB_PATH}")
+    return config.VOCAB_PATH
+
+
+def load_vocab() -> dict[str, int]:
+    if not config.VOCAB_PATH.exists():
+        raise FileNotFoundError(f"找不到词表：{config.VOCAB_PATH}\n请先运行训练")
+    return json.loads(config.VOCAB_PATH.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------- 编码
+
+
+def encode(
+    texts: list[str],
+    word2idx: dict[str, int],
+    max_len: int = config.MAX_LEN,
+) -> tuple[np.ndarray, np.ndarray]:
+    """文本 → (定长索引矩阵, 真实词数)。
+
+    超出 max_len 的尾部截断，不足的在**后侧**补 PAD_IDX。
+
+    lengths 记录真实词数（不含填充），是模型取「最后一个真实词」的必要输入。
+    取 output[-1] 会读到填充位——这是本项目继承自课程实验四的核心教训。
+    lengths 至少为 1，避免全空文本导致 gather 索引越界。
+    """
+    ids_out = np.zeros((len(texts), max_len), dtype=np.int64)
+    lengths = np.zeros(len(texts), dtype=np.int64)
+
+    for i, text in enumerate(texts):
+        seq = [word2idx.get(w, config.UNK_IDX) for w in tokenize(text)][:max_len]
+        ids_out[i, : len(seq)] = seq
+        lengths[i] = max(len(seq), 1)
+
+    return ids_out, lengths
