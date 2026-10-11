@@ -22,6 +22,8 @@ HTML_PAGE = b"<!DOCTYPE html>\n<html><body>404 Not Found</body></html>\n"
 # 约 3.6 MB、跨 55 个数据块：用来模拟「每次连接只推进一块」的链路，块数刻意 >40，
 # 以便钉住 MAX_ATTEMPTS 不能退回那个不够用的旧值。
 BIG_BODY = b"label,review\n" + b"1,\xe5\xa5\xbd\xe5\x90\x83\n" * 400_000
+# 约 810 KB、跨 13 个数据块：配合「每 3 次请求抖一次」用来验证停滞计数会被推进清零。
+MEDIUM_BODY = b"label,review\n" + b"1,\xe5\xa5\xbd\xe5\x90\x83\n" * 90_000
 
 
 class _CorpusHandler(BaseHTTPRequestHandler):
@@ -52,6 +54,13 @@ class _CorpusHandler(BaseHTTPRequestHandler):
         payload = body[start:]
         if s.get("one_chunk"):
             payload = payload[:corpora.CHUNK]   # 模拟「一次连接只推进一个数据块」的链路
+
+        # 第 2 次请求起，每 fail_every 次回一个空响应，模拟链路抖动。
+        # 必须仍走 206（带正确的 Content-Range 总长），否则客户端会以 wb 重写、把半成品毁掉。
+        s["requests"] = s.get("requests", 0) + 1
+        if s.get("fail_every") and s["requests"] > 1 and s["requests"] % s["fail_every"] == 0:
+            payload = b""
+            s.setdefault("failed", []).append(s["requests"])
 
         if use_range:
             total = s.get("total")
@@ -470,10 +479,9 @@ def test_download_one_does_not_retry_a_source_whose_content_is_unusable(serve, t
 def test_download_one_survives_a_link_that_advances_one_chunk_at_a_time(serve, tmp_path):
     """回归 Important-3：链路每次连接只推进一个数据块时，必须靠续传一路跑完。
 
-    这条同时钉住两件事，去掉任一件它都会红：
-      · 「有推进就重置停滞计数」——否则跑 3 次就被判为无进展而放弃；
-      · `MAX_ATTEMPTS` 足够大——旧值 40 下不来这个 55 块的语料。
-    构造上必须让服务端**声明完整长度**却只发一块，客户端才会判为「中断」而不是「下完了」。
+    这条钉住的是 `MAX_ATTEMPTS` 足够大——把上限退回 40（旧值）它会立刻变红。
+    注意它**不**覆盖「停滞计数在推进时清零」：在单调推进的场景里那个重置是行为等价的
+    （计数初值为 0，只在无进展时自增），所以这里观察不到差别，那条另有用例覆盖。
     """
     url, script = serve
     script["body"] = BIG_BODY
@@ -492,6 +500,33 @@ def test_download_one_survives_a_link_that_advances_one_chunk_at_a_time(serve, t
     attempts = len(script["seen"])
     assert attempts == -(-len(BIG_BODY) // corpora.CHUNK)     # 每次恰好推进一块
     assert attempts > 40, "这条用例的意义就在于块数要多于旧上限，否则钉不住 MAX_ATTEMPTS"
+
+
+def test_download_one_forgives_earlier_stalls_once_progress_resumes(serve, tmp_path):
+    """间歇性失败不该累积成「源已死」：只要还在推进，之前的停滞就该被清零。
+
+    服务端每次连接推进一块，但每第 3 次请求回一次空响应。若实现**不**在推进时重置
+    停滞计数，无进展就会一路累加、到第 3 次误判放弃——而它其实一直在前进。
+    这条正是 `test_..._one_chunk_at_a_time` 那条 docstring 里说明它覆盖不到的行为。
+    """
+    url, script = serve
+    script["body"] = MEDIUM_BODY
+    script["one_chunk"] = True
+    script["content_length"] = len(MEDIUM_BODY)
+    script["fail_every"] = 3
+    dest = tmp_path / "x.csv"
+
+    corpora._download_one(
+        "waimai_10k",
+        corpora.FileSpec("x.csv", (url,), expected_bytes=len(MEDIUM_BODY)),
+        dest,
+        corpora.CORPORA["waimai_10k"],
+    )
+
+    assert dest.read_bytes() == MEDIUM_BODY
+    # 确实发生了多次「无进展」，但下载仍然完成——否则这条用例证明不了什么
+    assert len(script["failed"]) >= 3
+    assert corpora.STALL_LIMIT <= len(script["failed"])
 
 
 # ---------------------------------------------------------------- 端到端（本地目录）
