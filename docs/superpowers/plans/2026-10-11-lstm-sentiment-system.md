@@ -1245,6 +1245,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
     criterion = nn.CrossEntropyLoss()
 
     best_val, best_state = -1.0, None
+    history = {"loss": [], "val_acc": []}   # 逐轮累积，供 visualize() 绘图
     t0 = time.time()
 
     for epoch in range(config.EPOCHS):
@@ -1259,20 +1260,27 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
             optimizer.step()
             loss_sum += loss.item()
 
+        epoch_loss = loss_sum / len(tr_loader)
         val_acc = evaluate(m, val_loader, dev)
+        history["loss"].append(epoch_loss)
+        history["val_acc"].append(val_acc)
+
         if val_acc > best_val:
             best_val = val_acc
             best_state = {k: v.detach().clone() for k, v in m.state_dict().items()}
 
         if not quiet:
             print(f"  [{mid}] epoch {epoch + 1}/{config.EPOCHS} "
-                  f"loss={loss_sum / len(tr_loader):.4f} val_acc={val_acc:.4f}")
+                  f"loss={epoch_loss:.4f} val_acc={val_acc:.4f}")
 
     # 用验证最优权重报告测试集指标
     assert best_state is not None
     m.load_state_dict(best_state)
     test_acc = evaluate(m, te_loader, dev)
     train_time = time.time() - t0
+
+    # 训练曲线是报告第 5 章「结果分析」的素材，必须产出，故不随 quiet 关闭
+    visualize(history, mid)
 
     config.ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(
