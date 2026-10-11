@@ -23,7 +23,11 @@
 - **命名**：Python 变量与函数 `snake_case`，类 `PascalCase`，常量 `UPPER_SNAKE_CASE`；
   TypeScript 组件 `PascalCase`，其余 `camelCase`
 - **随机种子**：`RANDOM_SEED = 42`，所有训练入口必须调用 `set_seed()`
-- **测试集纪律**：测试集**只**在训练全部结束后报告最终指标；选最优轮次一律用验证集
+- **测试集纪律（选择 vs 报告）**：测试集**只**在训练全部结束后报告最终指标。
+  凡代码做**选择**之处——选最优轮次、选「最优配置」、模型列表排序、前端默认选项——
+  一律依据**验证**准确率；测试准确率照常逐条返回，但不参与任何排序或挑选。
+  理由：对 6 个测试准确率取极大值会被系统性高估（winner's curse），
+  使报告的头条数字失去无偏性。
 - **路径定位**：脚本用 `Path(__file__)` 定位项目根，不依赖当前工作目录
 - **超参数**：全部集中在 `backend/senti/config.py`，训练/推理代码内不得出现字面量
 - **重要**：先读 `docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`，
@@ -1243,7 +1247,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
     )
 
     m = model.SentimentLSTM(
-        vocab_size=len(vocab) + 2, hidden_dim=hidden, num_layers=layers
+        vocab_size=len(vocab) + config.FIRST_WORD_IDX, hidden_dim=hidden, num_layers=layers
     ).to(dev)
     optimizer = optim.Adam(m.parameters(), lr=config.LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
@@ -1293,7 +1297,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
             "layers": layers,
             "hidden_dim": hidden,
             "embedding_dim": config.EMBEDDING_DIM,
-            "vocab_size": len(vocab) + 2,
+            "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
             "max_len": config.MAX_LEN,
             "state_dict": best_state,
         },
@@ -1309,7 +1313,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
         "test_acc": round(test_acc, 4),
         "params": model.count_parameters(m),
         "train_time_sec": round(train_time, 1),
-        "vocab_size": len(vocab) + 2,
+        "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
     }
     print(f"  [{mid}] 验证 {best_val:.4f} / 测试 {test_acc:.4f} / "
           f"参数 {metrics['params']:,} / 耗时 {train_time:.0f}s")
@@ -1335,7 +1339,7 @@ def overfit_test(n: int = 40, epochs: int = 30) -> float:
     loader = make_loader(ids, lengths, labels, batch_size=min(n, 16), shuffle=True)
 
     m = model.SentimentLSTM(
-        vocab_size=len(vocab) + 2, hidden_dim=64, num_layers=1, dropout=0.0
+        vocab_size=len(vocab) + config.FIRST_WORD_IDX, hidden_dim=64, num_layers=1, dropout=0.0
     ).to(dev)
     optimizer = optim.Adam(m.parameters(), lr=1e-3)
     criterion = nn.CrossEntropyLoss()
@@ -1401,7 +1405,7 @@ def run_grid() -> dict:
         "dataset": "ChnSentiCorp",
         "train_size": len(tr_texts),
         "test_size": len(te_texts),
-        "vocab_size": len(vocab) + 2,
+        "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
         "max_len": config.MAX_LEN,
         "models": results,
     }
@@ -1411,8 +1415,12 @@ def run_grid() -> dict:
     )
     print(f"\n元数据已保存：{config.META_PATH}")
 
-    best = max(results, key=lambda r: r["test_acc"])
-    print(f"最优配置：{best['model_id']}  测试准确率 {best['test_acc']:.4f}")
+    # 最优配置按**验证**准确率选取：测试集只负责报告，不参与任何选择。
+    # 若按 test_acc 排序，报出的「最优」就是 6 个测试准确率的极大值，
+    # 会被系统性高估（winner's curse），失去无偏性。
+    best = max(results, key=lambda r: r["val_acc"])
+    print(f"最优配置（按验证集选出）：{best['model_id']}  "
+          f"验证 {best['val_acc']:.4f} / 测试 {best['test_acc']:.4f}")
     return meta
 
 
@@ -1427,7 +1435,7 @@ def write_meta_for_single(metrics: dict) -> None:
             "dataset": "ChnSentiCorp",
             "train_size": len(tr_texts),
             "test_size": len(te_texts),
-            "vocab_size": len(vocab) + 2,
+            "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
             "max_len": config.MAX_LEN,
             "models": [],
         }
@@ -1511,9 +1519,10 @@ from senti import config
 meta = json.loads(config.META_PATH.read_text(encoding='utf-8'))
 print(f\"数据集 {meta['dataset']}  训练 {meta['train_size']} / 测试 {meta['test_size']}\")
 print(f\"词表 {meta['vocab_size']}  MAX_LEN {meta['max_len']}\")
-for m in sorted(meta['models'], key=lambda r: -r['test_acc']):
-    print(f\"{m['model_id']:<14} 测试 {m['test_acc']:.4f}  参数量 {m['params']:>8,}  耗时 {m['train_time_sec']:>6.0f}s\")
-best = max(meta['models'], key=lambda r: r['test_acc'])
+for m in sorted(meta['models'], key=lambda r: -r['val_acc']):
+    print(f\"{m['model_id']:<14} 验证 {m['val_acc']:.4f}  测试 {m['test_acc']:.4f}  参数量 {m['params']:>8,}  耗时 {m['train_time_sec']:>6.0f}s\")
+best = max(meta['models'], key=lambda r: r['val_acc'])
+print(f\"按验证集选出的最优：{best['model_id']}\")
 print('达标' if best['test_acc'] >= 0.85 else '未达标（门槛 0.85）')
 "@
 ```
@@ -1571,7 +1580,7 @@ def predictor():
     models = infer.list_models()
     if not models:
         pytest.skip("尚无 checkpoint，先运行：python -m senti.train")
-    best = max(models, key=lambda m: m["test_acc"])
+    best = max(models, key=lambda m: m["val_acc"])
     return infer.get_predictor(best["id"])
 
 
@@ -1693,7 +1702,10 @@ def list_models() -> list[dict]:
         }
         for m in meta.get("models", [])
     ]
-    return sorted(models, key=lambda m: -m["test_acc"])
+    # 按**验证**准确率降序：这是「选择」，不是「报告」。
+    # 测试准确率仍在响应里逐条返回，但不参与排序——
+    # 否则前端默认选中的就是 6 个测试准确率的极大值（winner's curse）。
+    return sorted(models, key=lambda m: -m["val_acc"])
 
 
 class Predictor:
@@ -1853,7 +1865,7 @@ Run:
 cd backend
 ..\.venv\Scripts\python.exe -c @"
 from senti import infer
-p = infer.get_predictor(max(infer.list_models(), key=lambda m: m['test_acc'])['id'])
+p = infer.get_predictor(max(infer.list_models(), key=lambda m: m['val_acc'])['id'])
 r = p.explain('这家酒店位置很好，离地铁站近，但房间隔音太差，晚上吵得睡不着')
 print(f\"积极概率 {r['prob_pos']:.4f}\")
 for c in r['contributions'][:10]:
@@ -1919,7 +1931,7 @@ def client():
 
 @pytest.fixture(scope="module")
 def best_model_id():
-    return max(infer.list_models(), key=lambda m: m["test_acc"])["id"]
+    return max(infer.list_models(), key=lambda m: m["val_acc"])["id"]
 
 
 def test_health(client):
@@ -2468,7 +2480,10 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchModels } from "../api/client";
 import type { ModelInfo } from "../types";
 
-/** 拉取可用模型列表，并按测试准确率降序排列。 */
+/** 拉取可用模型列表，并按**验证**准确率降序排列。
+ *
+ *  用验证集而非测试集排序：排序即「选择」，而测试集只负责报告。
+ *  若按测试准确率排序，默认选中的就是 6 个测试准确率的极大值，会被高估。 */
 export function useModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2479,7 +2494,7 @@ export function useModels() {
     setError(null);
     try {
       const list = await fetchModels();
-      setModels([...list].sort((a, b) => b.test_acc - a.test_acc));
+      setModels([...list].sort((a, b) => b.val_acc - a.val_acc));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
