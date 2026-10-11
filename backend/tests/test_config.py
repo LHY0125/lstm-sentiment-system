@@ -29,5 +29,8 @@ def test_special_token_indices():
     """0 号必须留给 <pad>，1 号留给 <unk>，实词从 2 开始。"""
     assert config.PAD_IDX == 0
     assert config.UNK_IDX == 1
+    # 关系和数值一起锁：只钉死 2 的话，将来若增删特殊符号，
+    # 这里不会跟着报错，词表与 encode 会静默错位。
+    assert config.FIRST_WORD_IDX == config.UNK_IDX + 1 == 2
     assert config.MAX_LEN > 0
     assert config.CONTRIB_MAX_TOKENS > 0

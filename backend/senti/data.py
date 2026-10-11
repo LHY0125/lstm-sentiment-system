@@ -254,7 +254,7 @@ def build_vocab(texts: list[str]) -> dict[str, int]:
 
     # 先按词频取前 MAX_VOCAB 个，再滤掉低频词
     words = [w for w, c in counter.most_common(config.MAX_VOCAB) if c >= config.MIN_FREQ]
-    vocab = {w: i + 2 for i, w in enumerate(words)}
+    vocab = {w: config.FIRST_WORD_IDX + i for i, w in enumerate(words)}
     print(f"词表大小：{len(vocab)}（原始不同词数 {len(counter)}）")
     return vocab
 
@@ -291,7 +291,10 @@ def encode(
     取 output[-1] 会读到填充位——这是本项目继承自课程实验四的核心教训。
     lengths 至少为 1，避免全空文本导致 gather 索引越界。
     """
-    ids_out = np.zeros((len(texts), max_len), dtype=np.int64)
+    # 用 np.full 而非 np.zeros：填充值必须取自 config.PAD_IDX，
+    # 否则将来改填充值时这里会静默地对不上，而测试也钉死了 0 看不出来。
+    ids_out = np.full((len(texts), max_len), config.PAD_IDX, dtype=np.int64)
+    # lengths 是「计数」不是「索引」，0 就是有意义的零，与 PAD_IDX 无关
     lengths = np.zeros(len(texts), dtype=np.int64)
 
     for i, text in enumerate(texts):
