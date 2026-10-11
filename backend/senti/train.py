@@ -102,7 +102,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
     )
 
     m = model.SentimentLSTM(
-        vocab_size=len(vocab) + 2, hidden_dim=hidden, num_layers=layers
+        vocab_size=len(vocab) + config.FIRST_WORD_IDX, hidden_dim=hidden, num_layers=layers
     ).to(dev)
     optimizer = optim.Adam(m.parameters(), lr=config.LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
@@ -152,7 +152,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
             "layers": layers,
             "hidden_dim": hidden,
             "embedding_dim": config.EMBEDDING_DIM,
-            "vocab_size": len(vocab) + 2,
+            "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
             "max_len": config.MAX_LEN,
             "state_dict": best_state,
         },
@@ -168,7 +168,7 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
         "test_acc": round(test_acc, 4),
         "params": model.count_parameters(m),
         "train_time_sec": round(train_time, 1),
-        "vocab_size": len(vocab) + 2,
+        "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
     }
     print(f"  [{mid}] 验证 {best_val:.4f} / 测试 {test_acc:.4f} / "
           f"参数 {metrics['params']:,} / 耗时 {train_time:.0f}s")
@@ -196,7 +196,7 @@ def overfit_test(n: int = 40, epochs: int = 30) -> float:
     # hidden/层数刻意取「小而固定」的诊断模型：本测试只关心管线能否过拟合，
     # 不是在搜索超参数，所以这两个数不进 config，也不随 GRID 变化。
     m = model.SentimentLSTM(
-        vocab_size=len(vocab) + 2, hidden_dim=64, num_layers=1, dropout=0.0
+        vocab_size=len(vocab) + config.FIRST_WORD_IDX, hidden_dim=64, num_layers=1, dropout=0.0
     ).to(dev)
     optimizer = optim.Adam(m.parameters(), lr=config.LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
@@ -258,13 +258,21 @@ def run_grid() -> dict:
         print(f"\n=== 训练 {config.model_id(layers, hidden)} ===")
         results.append(train_one(layers, hidden))
 
+    # 排序与「最优配置」一律按**验证集**：测试集只负责报告，不参与任何选择。
+    #
+    # 若改用 test_acc 排序，即使每个配置各自都没作弊，「六选一」的最优值也会带上
+    # 选择性偏差（winner's curse）——报告里的头条数字随之系统性偏乐观。
+    # 各配置的 test_acc 照常写入 meta 并打印，只是不再驱动排序。
+    # 不要「顺手」改回按 test_acc 排。
+    ranked = sorted(results, key=lambda r: r["val_acc"], reverse=True)
+
     meta = {
         "dataset": "ChnSentiCorp",
         "train_size": len(tr_texts),
         "test_size": len(te_texts),
-        "vocab_size": len(vocab) + 2,
+        "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
         "max_len": config.MAX_LEN,
-        "models": results,
+        "models": ranked,
     }
     config.ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     config.META_PATH.write_text(
@@ -272,8 +280,10 @@ def run_grid() -> dict:
     )
     print(f"\n元数据已保存：{config.META_PATH}")
 
-    best = max(results, key=lambda r: r["test_acc"])
-    print(f"最优配置：{best['model_id']}  测试准确率 {best['test_acc']:.4f}")
+    best = ranked[0]
+    print(f"最优配置（按验证集选出）：{best['model_id']}  "
+          f"验证 {best['val_acc']:.4f} / 测试 {best['test_acc']:.4f}")
+    print("注：排序依据为验证准确率，测试准确率仅作报告，不参与选择。")
     return meta
 
 
@@ -288,12 +298,18 @@ def write_meta_for_single(metrics: dict) -> None:
             "dataset": "ChnSentiCorp",
             "train_size": len(tr_texts),
             "test_size": len(te_texts),
-            "vocab_size": len(vocab) + 2,
+            "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
             "max_len": config.MAX_LEN,
             "models": [],
         }
-    meta["models"] = [m for m in meta["models"] if m["model_id"] != metrics["model_id"]]
-    meta["models"].append(metrics)
+    # 与 run_grid 同一条规则：meta 里 models 一律按**验证**准确率降序，
+    # 测试准确率只随行输出、不参与排序。两个写入点都保持该不变式，
+    # 否则「哪个入口写的」会决定数组顺序。
+    meta["models"] = sorted(
+        [m for m in meta["models"] if m["model_id"] != metrics["model_id"]] + [metrics],
+        key=lambda r: r["val_acc"],
+        reverse=True,
+    )
     config.META_PATH.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
