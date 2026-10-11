@@ -3144,7 +3144,10 @@ export function ResultTable({ items, threshold }: Props) {
             {items.map((it, i) => {
               const label = labelOf(it.prob_pos, threshold);
               return (
-                <tr key={`${i}-${it.text.slice(0, 12)}`} className="border-t border-slate-100">
+                {/* ⚠️ 原来的 key={`${i}-${it.text.slice(0,12)}`} 过不了 Biome 的
+                    suspicious/noArrayIndexKey（见全局约束）。先把 items 摊成带显式 id 的渲染单元，
+                    再 key={row.id}。本仓库不引入 biome-ignore。 */}
+                <tr key={row.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 text-slate-400">{i + 1}</td>
                   <td className="max-w-md truncate px-3 py-2" title={it.text}>
                     {it.text}
