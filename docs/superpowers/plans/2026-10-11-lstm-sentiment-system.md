@@ -104,6 +104,8 @@ frontend/dist/
 [pytest]
 pythonpath = .
 testpaths = tests
+filterwarnings =
+    ignore:pkg_resources is deprecated as an API:UserWarning
 ```
 
 `backend/tests/__init__.py`：空文件。
@@ -141,6 +143,7 @@ def test_special_token_indices():
     """0 号必须留给 <pad>，1 号留给 <unk>，实词从 2 开始。"""
     assert config.PAD_IDX == 0
     assert config.UNK_IDX == 1
+    assert config.FIRST_WORD_IDX == config.UNK_IDX + 1 == 2
     assert config.MAX_LEN > 0
     assert config.CONTRIB_MAX_TOKENS > 0
 ```
@@ -181,7 +184,8 @@ MAX_LEN = 150          # 词级截断长度；中文分词后序列比英文短�
 MAX_VOCAB = 20000      # 词表上限，按词频取前 N 个
 MIN_FREQ = 2           # 出现次数低于此值的词不入表，记为 <unk>
 PAD_IDX = 0            # <pad> 的索引
-UNK_IDX = 1            # <unk> 的索引；实词索引从 2 开始
+UNK_IDX = 1            # <unk> 的索引
+FIRST_WORD_IDX = UNK_IDX + 1   # 实词索引起点；<pad> 与 <unk> 之后
 
 # ---------------------------------------------------------------- 模型
 EMBEDDING_DIM = 128    # 词向量维度；网格实验中固定，不参与搜索
@@ -760,7 +764,7 @@ def build_vocab(texts: list[str]) -> dict[str, int]:
 
     # 先按词频取前 MAX_VOCAB 个，再滤掉低频词
     words = [w for w, c in counter.most_common(config.MAX_VOCAB) if c >= config.MIN_FREQ]
-    vocab = {w: i + 2 for i, w in enumerate(words)}
+    vocab = {w: i + config.FIRST_WORD_IDX for i, w in enumerate(words)}
     print(f"词表大小：{len(vocab)}（原始不同词数 {len(counter)}）")
     return vocab
 
@@ -797,7 +801,7 @@ def encode(
     取 output[-1] 会读到填充位——这是本项目继承自课程实验四的核心教训。
     lengths 至少为 1，避免全空文本导致 gather 索引越界。
     """
-    ids_out = np.zeros((len(texts), max_len), dtype=np.int64)
+    ids_out = np.full((len(texts), max_len), config.PAD_IDX, dtype=np.int64)
     lengths = np.zeros(len(texts), dtype=np.int64)
 
     for i, text in enumerate(texts):
