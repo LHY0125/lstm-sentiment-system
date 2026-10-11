@@ -39,8 +39,16 @@ from senti import config
 CONNECT_TIMEOUT = 30   # 建连超时
 READ_TIMEOUT = 180     # 单次接收超时；DMSC 是 143 MB，弱网下必须放宽
 STALL_LIMIT = 3        # 连续多少次「一点没推进」就判定该源不可用
-MAX_ATTEMPTS = 40      # 单个源的尝试硬上限（续传有效时通常远用不到）
+# 单个源的尝试**防呆上限**，正常情况下远不会触及：
+# 真正的停止条件是「连续 STALL_LIMIT 次无进展」（源一死 3 次就放弃），
+# 而只要还在推进就该继续。这个数按最坏情形定——若链路每次连接只送出一个数据块（CHUNK），
+# 143 MB 的 DMSC 需要约 2200 次才下得完；上限必须远大于它，
+# 否则就会出现「明明在推进却被判定放弃」。（评审者用本地服务端实测复现过这条。）
+MAX_ATTEMPTS = 5000
 CHUNK = 1 << 16        # 64 KiB
+# 单个文件的字节硬上限，防止异常响应把磁盘填满。
+# DMSC 是 143.6 MB，这里留了约 3.5 倍余量。
+MAX_FILE_BYTES = 512 * 1024 * 1024
 
 # 校验用的抽样行数：解析校验只需要证明「文件确实能当语料读」，
 # 不必把 500 MB 的 CSV 全解一遍。完整性由服务端声明的总字节数兜住（见 _fetch）。
@@ -78,6 +86,11 @@ class FileSpec:
 
     relpath: str
     urls: tuple[str, ...]
+    # 该文件的字节数（自 hf-mirror 的 /tree 接口核对，与本地实测一致）。
+    # 用途是**兜底**：服务端既没给 Content-Length 也没给 Content-Range 时，
+    # 没有它就分不出「下完了」和「被截断了」——而截断的 CSV 照样能解析出前若干行，
+    # 于是坏文件会被当成语料固化下来。登记表里每个文件都必须填这一项。
+    expected_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,6 +152,7 @@ CORPORA: dict[str, CorpusSpec] = {
                     _resolve("XiangPan/waimai_10k", "waimai_10k.csv"),
                     _resolve("dirtycomputer/waimai_10k", "waimai_10k.csv"),
                 ),
+                expected_bytes=919_380,
             ),
         ),
         label_map={"1": 1, "0": 0},
@@ -156,6 +170,7 @@ CORPORA: dict[str, CorpusSpec] = {
                     _resolve("dirtycomputer/weibo_senti_100k", "weibo_senti_100k.csv"),
                     _resolve("hlsk/weibo_senti_100k", "weibo_senti_100k.csv"),
                 ),
+                expected_bytes=19_699_818,
             ),
         ),
         label_map={"1": 1, "0": 0},
@@ -173,6 +188,7 @@ CORPORA: dict[str, CorpusSpec] = {
                     _resolve("XiangPan/online_shopping_10_cats_62k", "online_shopping_10_cats.csv"),
                     _resolve("dirtycomputer/online_shopping_10_cats", "online_shopping_10_cats.csv"),
                 ),
+                expected_bytes=11_299_695,
             ),
         ),
         label_map={"1": 1, "0": 0},
@@ -188,6 +204,7 @@ CORPORA: dict[str, CorpusSpec] = {
             FileSpec(
                 "DMSC.csv.zip",
                 (_resolve("BerlinWang/DMSC", "DMSC.csv.zip"),),
+                expected_bytes=150_609_472,
             ),
         ),
         label_map=STAR_TO_LABEL,
@@ -231,12 +248,31 @@ def _tmp_path(dest: Path) -> Path:
     return dest.with_name(f"{dest.stem}.part{dest.suffix}")
 
 
-def _fetch(url: str, tmp: Path) -> None:
-    """把 url 取到 tmp，支持断点续传，并用服务端声明的总长度校验完整性。
+def _size(path: Path) -> int:
+    """文件字节数；不存在算 0。"""
+    return path.stat().st_size if path.exists() else 0
+
+
+def _resolve_expected(server_total: int | None, declared: int) -> int | None:
+    """定出「这个文件应该有多少字节」。
+
+    服务端声明的总长优先（权威且随上游更新而变）；服务端没给时退回登记表里
+    声明的字节数；两者都没有才放弃长度校验（`declared` 为 0 也表示「没填」）。
+
+    只信服务端会留一个洞：服务端既不给 Content-Length 也不给 Content-Range 时，
+    截断的文件无法被识别——评审者用本地服务端实测复现过。故必须有登记表兜底。
+    """
+    if server_total is not None:
+        return server_total
+    return declared or None
+
+
+def _fetch(url: str, tmp: Path, declared: int) -> None:
+    """把 url 取到 tmp，支持断点续传，并校验收到的字节数。
 
     为什么必须校验总长度：本机链路会中途断开，续传后若「少了一截」，CSV 往往
-    仍能解析出前若干行——于是坏文件会被当成好语料固化下来。用 Content-Length /
-    Content-Range 里声明的总字节数一比即可发现。
+    仍能解析出前若干行——于是坏文件会被当成好语料固化下来，而 is_downloaded()
+    之后永远为真。用总字节数一比即可发现。
     """
     start = tmp.stat().st_size if tmp.exists() else 0
     headers = {"Accept-Encoding": "identity"}   # 避免压缩传输让长度对不上
@@ -247,25 +283,48 @@ def _fetch(url: str, tmp: Path) -> None:
         url, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT), stream=True, headers=headers
     ) as resp:
         if start and resp.status_code == 206:
-            expected = _total_from_content_range(resp.headers.get("Content-Range"))
+            expected = _resolve_expected(
+                _total_from_content_range(resp.headers.get("Content-Range")), declared
+            )
             mode, written = "ab", start
         else:
             # 服务器不支持续传（或没要求续传）：从头写，mode=wb 会截断旧内容
             resp.raise_for_status()
-            expected = _int_or_none(resp.headers.get("Content-Length"))
+            expected = _resolve_expected(
+                _int_or_none(resp.headers.get("Content-Length")), declared
+            )
             mode, written = "wb", 0
 
-        with tmp.open(mode) as fh:
-            for chunk in resp.iter_content(chunk_size=CHUNK):
-                written += len(chunk)
-                fh.write(chunk)
+        too_big = False
+        try:
+            with tmp.open(mode) as fh:
+                for chunk in resp.iter_content(chunk_size=CHUNK):
+                    written += len(chunk)
+                    if written > MAX_FILE_BYTES:
+                        too_big = True
+                        break
+                    fh.write(chunk)
+        except requests.RequestException as exc:
+            # 传输在读完之前断掉：urllib3 会**抢先**抛出来——Content-Length 与实际不符时
+            # 它抛 ChunkedEncodingError，我的长度比较根本轮不到执行。这里统一成本模块的
+            # IncompleteTransfer：「半成品保留、下次带 Range 续传」这条语义对调用方应当是
+            # 单一的，不该让它去分辨底层异常类型。
+            if expected is not None and _size(tmp) < expected:
+                raise IncompleteTransfer(
+                    f"传输中断：{type(exc).__name__}: {exc}（将续传）"
+                ) from exc
+            raise
 
+    if too_big:
+        # 注意必须在 with 之外删：Windows 上删一个仍被打开的文件会 PermissionError
+        tmp.unlink(missing_ok=True)
+        raise ValueError(f"超过单文件上限 {MAX_FILE_BYTES} 字节，疑似异常内容")
     if written == 0:
         raise ValueError("响应为空")
     if expected is not None and written > expected:
         # 多出来的字节说明这个临时文件已经不可信，丢掉重来（不能在此基础上续传）
         tmp.unlink(missing_ok=True)
-        raise ValueError(f"收到 {written} 字节，多于服务端声明的 {expected} 字节，已丢弃")
+        raise ValueError(f"收到 {written} 字节，多于预期 {expected} 字节，已丢弃")
     if expected is not None and written < expected:
         # 少了一截：**保留**临时文件，下一次尝试会带 Range 头续传。
         # 这是弱网下载大文件的唯一活路（DMSC 有 143 MB，链路会中途重置）。
@@ -286,7 +345,7 @@ def _total_from_content_range(value: str | None) -> int | None:
     return _int_or_none(value.rsplit("/", 1)[1].strip())
 
 
-def _fetch_validated(url: str, dest: Path, spec: CorpusSpec) -> None:
+def _fetch_validated(url: str, dest: Path, spec: CorpusSpec, expected_bytes: int) -> None:
     """下载 → 抽样解析校验 → 原子改名。
 
     失败时**删不删临时文件取决于失败发生在哪一层**，这条区分很关键：
@@ -296,7 +355,7 @@ def _fetch_validated(url: str, dest: Path, spec: CorpusSpec) -> None:
     就会被固化成语料，而 is_downloaded() 之后永远为真。
     """
     tmp = _tmp_path(dest)
-    _fetch(url, tmp)          # 网络层：异常直接上抛，tmp 原样保留供续传
+    _fetch(url, tmp, expected_bytes)   # 网络层：异常直接上抛，tmp 原样保留供续传
 
     try:
         rows = list(_iter_rows(tmp, spec, limit=VALIDATE_ROWS))
@@ -330,6 +389,11 @@ def download(key: str, force: bool = False) -> Path:
     return dest_dir
 
 
+def _src_marker(tmp: Path) -> Path:
+    """记录「这个临时文件是哪个源留下的」，用于跨进程续传时判断能不能接着用。"""
+    return tmp.with_name(tmp.name + ".src")
+
+
 def _download_one(key: str, file_spec: FileSpec, dest: Path, spec: CorpusSpec) -> None:
     """按优先级逐个源下载一个文件；全部失败才抛错。
 
@@ -339,16 +403,27 @@ def _download_one(key: str, file_spec: FileSpec, dest: Path, spec: CorpusSpec) -
     又浪费（源已经死了还在重试）。MAX_ATTEMPTS 只是防呆硬上限。
     """
     last_error: Exception | None = None
+    tmp = _tmp_path(dest)
+    marker = _src_marker(tmp)
+
     for url in file_spec.urls:
-        tmp = _tmp_path(dest)
-        tmp.unlink(missing_ok=True)   # 换源必须清空：不同源的字节拼在一起就是垃圾
+        # 只有当临时文件**确实来自同一个源**时才接着用。换源时必须清空：
+        # 不同源的字节拼在一起就是垃圾，而且还能通过长度校验。
+        # （早先无条件清空的写法把「换源」和「跨进程续传」一起干掉了——
+        #   上个进程留下的半成品会在第一次尝试前就被删掉。评审者实测复现过。）
+        resumed = tmp.exists() and marker.exists() and marker.read_text(encoding="utf-8") == url
+        if not resumed:
+            tmp.unlink(missing_ok=True)
+        marker.write_text(url, encoding="utf-8")
+
         stalls = 0
         for attempt in range(1, MAX_ATTEMPTS + 1):
             before = tmp.stat().st_size if tmp.exists() else 0
             try:
                 print(f"[{key}] 下载 {dest.name} ← {url}（第 {attempt} 次尝试）")
-                _fetch_validated(url, dest, spec)
+                _fetch_validated(url, dest, spec, file_spec.expected_bytes)
                 print(f"[{key}] 已保存：{dest}（{dest.stat().st_size} 字节）")
+                marker.unlink(missing_ok=True)
                 return
             except UnusableContent as exc:
                 # 内容不对，重下多少次都一样——直接放弃这个源，别白耗带宽
@@ -420,6 +495,27 @@ def _sniff_encoding(path: Path, sample: int = SNIFF_BYTES) -> str:
 
 def _open_csv_text(path: Path) -> io.TextIOBase:
     return path.open("r", encoding=_sniff_encoding(path), newline="")
+
+
+BOM = "﻿"
+
+
+def _deboom(lines) -> Iterator[str]:
+    """逐行抹掉行首的 BOM。
+
+    语料里**真的存在**行首 BOM（weibo 的部分记录）；`utf-8-sig` 只吃掉文件开头那一个，
+    行内的会原样落进字段名或字段值——表头若带 BOM，列名就再也认不出来。
+    """
+    for line in lines:
+        yield line[len(BOM):] if line.startswith(BOM) else line
+
+
+def _clean_text(raw: object) -> str:
+    """去掉值里混进的 BOM 与首尾空白。
+
+    注意 `str.strip()` **不**把 U+FEFF 当空白字符，所以必须显式去掉。
+    """
+    return str(raw).replace(BOM, "").strip()
 
 
 def _single_csv_name(zf: zipfile.ZipFile) -> str:
@@ -498,7 +594,7 @@ def _iter_rows(path: Path, spec: CorpusSpec, limit: int | None = None) -> Iterat
 
 
 def _iter_csv(handle, spec: CorpusSpec, name: str, limit: int | None) -> Iterator[Row]:
-    reader = csv.DictReader(handle)
+    reader = csv.DictReader(_deboom(handle))
     fields = reader.fieldnames or []
     text_col = _pick(_TEXT_KEYS, fields, spec.text_key, "文本")
     label_col = _pick(_LABEL_KEYS, fields, spec.label_key, "标签")
@@ -507,16 +603,16 @@ def _iter_csv(handle, spec: CorpusSpec, name: str, limit: int | None) -> Iterato
     for i, record in enumerate(reader):
         if limit is not None and i >= limit:
             return
-        text = str(record.get(text_col, "")).strip()
-        if not text:
-            continue      # 空评论没有信息量，跳过（与 data.py 的用法一致）
+        # 先校验标签再判空文本：反过来会让「空文本 + 非法标签」被当成正常跳过，
+        # 而不是触发失败关闭——那正是这条规矩要防的静默。
         label = _label_key(record.get(label_col), spec.label_map, name, i, spec.drop_labels)
-        if label is None:
-            continue      # 明确丢弃的档位（如 DMSC 的 3 星中性）
+        text = _clean_text(record.get(text_col, ""))
+        if label is None or not text:
+            continue      # 明确丢弃的档位（如 DMSC 的 3 星中性）／空评论
         yield Row(
             text=text,
             label=label,
-            group=str(record.get(group_col, "")).strip() if group_col else "",
+            group=_clean_text(record.get(group_col, "")) if group_col else "",
         )
 
 
@@ -534,16 +630,15 @@ def _iter_parquet(path: Path, spec: CorpusSpec, limit: int | None) -> Iterator[R
     for i, (text, label, group) in enumerate(zip(texts, labels, groups)):
         if limit is not None and i >= limit:
             return
-        text = str(text).strip()
-        if not text:
-            continue
+        # 与 _iter_csv 同序：先校验标签，再判空文本（见那里的注释）
         unified = _label_key(label, spec.label_map, path.name, i, spec.drop_labels)
-        if unified is None:
+        cleaned = _clean_text(text)
+        if unified is None or not cleaned:
             continue
         yield Row(
-            text=text,
+            text=cleaned,
             label=unified,
-            group=str(group).strip() if group_col else "",
+            group=_clean_text(group) if group_col else "",
         )
 
 
@@ -592,6 +687,9 @@ def summarize(keys: list[str] | None = None) -> None:
             if len(samples) < SAMPLE_ROWS:
                 samples.append(row)
 
+        if total == 0:
+            print("  可读样本为 0（文件在，但解析不出任何样本）")
+            continue
         print(f"  条数：{total}　积极 {pos}（{pos / total:.1%}）／消极 {total - pos}")
         if groups:
             shown = sorted(groups)[:GROUP_PREVIEW]
@@ -605,15 +703,30 @@ def summarize(keys: list[str] | None = None) -> None:
 
 
 def main() -> int:
+    # Windows 控制台常是 GBK，而语料里可能出现它编不了的字符（如 BOM U+FEFF）。
+    # 不处理的话，一条 print 就能让整个工具崩掉——README 里那条核对命令正是这样挂的。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")   # 保留控制台编码，只把编不了的字符换掉
+        except (AttributeError, ValueError):       # 非文本流 / 已关闭时忽略
+            pass
+
     parser = argparse.ArgumentParser(description="多语料下载与汇总（ChnSentiCorp 之外）")
     parser.add_argument("--keys", nargs="*", help="只处理这些语料（默认全部）")
     parser.add_argument("--force", action="store_true", help="已存在也重新下载")
     parser.add_argument("--no-download", action="store_true", help="只汇总，不下载")
     args = parser.parse_args()
 
+    targets = args.keys or list(CORPORA)
     if not args.no_download:
-        download_all(args.keys, force=args.force)
-    summarize(args.keys)
+        download_all(targets, force=args.force)
+    summarize(targets)
+
+    # 有语料没到位就返回非零，让脚本与 CI 能发现（原来恒返 0，等于永远报成功）
+    missing = [key for key in targets if not is_downloaded(key)]
+    if missing:
+        print(f"\n以下语料不可用：{missing}", file=sys.stderr)
+        return 1
     return 0
 
 

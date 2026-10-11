@@ -1,22 +1,93 @@
 # -*- coding: utf-8 -*-
-"""多语料适配层的单元测试。
+"""多语料适配层的单元与集成测试。
 
-**不联网**：网络路径（_fetch）在这里用桩替换，真正下载过的产物不在测试里依赖——
-否则测试会因为链路抖动而随机变红。
+**不联网**：下载相关的用例都打到一个本进程内的 HTTP 服务端上（`serve` 夹具），
+所以既能驱动真实的 `_fetch` / `_fetch_validated` / `_download_one`，又不会因为
+公网抖动而随机变红。真语料（`数据集/` 下）不参与测试。
 """
 
 import io
+import threading
 import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from senti import corpora
 
+# 一个对 waimai_10k 而言**合法**的语料体，且长度跨过多个 64 KiB 数据块，
+# 这样续传、截断这些行为才有东西可测。
+CORPUS_BODY = b"label,review\n" + b"1,\xe5\xa5\xbd\xe5\x90\x83\n" * 20000
+HTML_PAGE = b"<!DOCTYPE html>\n<html><body>404 Not Found</body></html>\n"
+
+
+class _CorpusHandler(BaseHTTPRequestHandler):
+    """按 class 属性 `script` 的剧本应答，用来对真实下载路径做对抗性实验。
+
+    剧本键：
+      body            要发送的字节
+      content_length  显式声明的 Content-Length（可故意写错）
+      total           Content-Range 里自称的总长（缺省用真实长度）
+      send_length     是否发送 Content-Length（False = 什么长度都不给）
+      support_range   是否支持 Range（False = 恒返 200）
+      seen            每次请求记录下的 Range 头（由夹具初始化）
+    """
+
+    script: dict = {}
+
+    def log_message(self, *args):   # 静音：否则每个请求都往 stderr 打一行
+        return
+
+    def do_GET(self):
+        s = type(self).script
+        s.setdefault("seen", []).append(self.headers.get("Range"))
+        body = s.get("body", b"")
+        rng = self.headers.get("Range")
+
+        if rng and s.get("support_range", True):
+            start = int(rng.split("=", 1)[1].split("-", 1)[0])
+            payload = body[start:]          # 注意：发出去的是**这一段**，不是整个 body
+            total = s.get("total")
+            self.send_response(206)
+            self.send_header(
+                "Content-Range",
+                f"bytes {start}-{start + len(payload) - 1}/{total if total is not None else len(body)}",
+            )
+            self.send_header("Content-Length", str(len(payload)))
+        else:
+            payload = body
+            self.send_response(200)
+            if s.get("content_length") is not None:
+                self.send_header("Content-Length", str(s["content_length"]))
+            elif s.get("send_length", True):
+                self.send_header("Content-Length", str(len(payload)))
+
+        self.send_header("Content-Type", "text/csv")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+        self.close_connection = True
+
+
+@pytest.fixture
+def serve():
+    """起一个本机可控服务端，返回 (url, script)。"""
+    _CorpusHandler.script = {}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CorpusHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/corpus.csv"
+    try:
+        yield url, _CorpusHandler.script
+    finally:
+        server.shutdown()
+        server.server_close()
+        _CorpusHandler.script = {}
+
 
 # ---------------------------------------------------------------- 登记表
 
 def test_registry_is_wellformed():
-    """登记表的每个条目都自洽：有镜像、有标签映射、读取方式已知。"""
+    """登记表的每个条目都自洽：有镜像、有标签映射、读取方式已知、字节数已填。"""
     for key, spec in corpora.CORPORA.items():
         assert spec.key == key, f"{key} 的 spec.key 与字典键不一致"
         assert spec.files, f"{key} 没有任何文件"
@@ -25,6 +96,8 @@ def test_registry_is_wellformed():
             assert file_spec.urls, f"{key}/{file_spec.relpath} 没有任何镜像"
             for url in file_spec.urls:
                 assert url.startswith("https://hf-mirror.com/datasets/"), url
+            # 没有它，服务端又不给长度时，截断的文件无法被识破
+            assert file_spec.expected_bytes > 0, f"{key}/{file_spec.relpath} 没填 expected_bytes"
         assert spec.label_map, f"{key} 没有声明标签映射"
         assert spec.reader in {"csv", "parquet", "zip-csv"}, f"{key} 读取方式未知"
         # 丢弃档与映射档必须互斥，否则同一条标签会有两种解释
@@ -114,12 +187,27 @@ def test_iter_csv_reads_rows_and_skips_blank_text():
 
 
 def test_iter_csv_skips_neutral_star_rows():
-    """DMSC 形状：3 星整行不产出，1/5 星分别映射到 0/1。"""
+    """DMSC 形状：3 星整行不产出，1/2/4/5 星映射到 0/1。"""
     spec = corpora.CORPORA["DMSC"]
     text = "Star,Comment,Movie_Name_CN\n5,好看,甲\n3,一般,甲\n2,难看,乙\n"
     rows = list(corpora._iter_csv(io.StringIO(text), spec, "DMSC.csv", None))
     assert [r.label for r in rows] == [1, 0]
     assert [r.group for r in rows] == ["甲", "乙"]
+
+
+def test_iter_csv_validates_label_even_when_text_is_blank():
+    """空文本不能成为绕过失败关闭的通道。"""
+    spec = corpora.CORPORA["waimai_10k"]
+    with pytest.raises(ValueError, match="取值非法"):
+        list(corpora._iter_csv(io.StringIO("label,review\n9,\n"), spec, "t.csv", None))
+
+
+def test_iter_csv_strips_bom_from_header_and_values():
+    """表头或值里的 BOM 必须被清掉：`str.strip()` 不把 U+FEFF 当空白。"""
+    spec = corpora.CORPORA["waimai_10k"]
+    text = "﻿label,review\n1,﻿好吃\n"
+    rows = list(corpora._iter_csv(io.StringIO(text), spec, "t.csv", None))
+    assert len(rows) == 1 and rows[0].text == "好吃"
 
 
 def test_iter_csv_honours_limit():
@@ -143,11 +231,11 @@ def test_zip_single_csv_reads_without_extracting(tmp_path):
         zf.writestr("inner.csv", "Star,Comment,Movie_Name_CN\n4,好看,甲\n2,难看,乙\n")
 
     spec = corpora.CORPORA["DMSC"]
-    assert spec.reader == "zip-csv"
     rows = list(corpora._iter_rows(archive, spec))
     assert [r.label for r in rows] == [1, 0]
     assert rows[0].group == "甲"
-    assert not list(tmp_path.iterdir()) or len(list(tmp_path.iterdir())) == 1  # 只有 zip，没有解压产物
+    # 只留下 zip 本身，没有解压产物
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["x.csv.zip"]
 
 
 def test_zip_with_two_csv_members_is_rejected(tmp_path):
@@ -159,46 +247,218 @@ def test_zip_with_two_csv_members_is_rejected(tmp_path):
         corpora._single_csv_name(zf)
 
 
-# ---------------------------------------------------------------- 下载：长度解析与失败处置
+# ---------------------------------------------------------------- _fetch（真实服务端）
+
+def test_total_from_content_range():
+    assert corpora._total_from_content_range("bytes 100-999/1000") == 1000
+    assert corpora._total_from_content_range("bytes 0-0/1") == 1
+    assert corpora._total_from_content_range("bytes 0-99/*") is None
+    assert corpora._total_from_content_range(None) is None
+    assert corpora._total_from_content_range("garbage") is None
+
 
 @pytest.mark.parametrize(
-    "header,expected",
+    "server_total,declared,expected",
     [
-        ("bytes 100-999/1000", 1000),
-        ("bytes 0-0/1", 1),
-        ("bytes 0-99/*", None),
-        (None, None),
-        ("garbage", None),
+        (1000, 999, 1000),   # 服务端优先
+        (None, 999, 999),    # 服务端没给 → 用登记表
+        (None, 0, None),     # 两边都没有 → 放弃长度校验
     ],
 )
-def test_total_from_content_range(header, expected):
-    assert corpora._total_from_content_range(header) == expected
+def test_resolve_expected(server_total, declared, expected):
+    assert corpora._resolve_expected(server_total, declared) == expected
 
 
-def test_fetch_validated_discards_tmp_when_content_is_unusable(tmp_path, monkeypatch):
-    """内容坏（比如 200 的 HTML 错误页）必须丢弃临时文件，
+def test_fetch_downloads_a_complete_file(serve, tmp_path):
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    tmp = tmp_path / "x.part.csv"
+    corpora._fetch(url, tmp, 0)
+    assert tmp.read_bytes() == CORPUS_BODY
+
+
+def test_fetch_detects_truncation_via_content_length(serve, tmp_path):
+    """服务端声明得比实发多 → 判为中断（否则截断文件会被当成语料固化），
+    且**保留**已收到的半成品供续传。
+
+    构造要点：必须让服务端先送出**若干个完整数据块**再断。urllib3 是按 Content-Length
+    整块读的，若不足一块就断，它会连已读到的字节一起丢掉抛 IncompleteRead——
+    那样一个字节都留不下，也就没有「半成品」可测（这是分块读的固有性质，不是缺陷）。
+    """
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    script["content_length"] = len(CORPUS_BODY) + 100_000      # 声称还有更多
+    tmp = tmp_path / "x.part.csv"
+    with pytest.raises(corpora.IncompleteTransfer):
+        corpora._fetch(url, tmp, 0)
+    size = tmp.stat().st_size
+    assert 0 < size < len(CORPUS_BODY)      # 收到了一部分，且确实不完整
+
+
+def test_fetch_detects_truncation_when_server_gives_no_length(serve, tmp_path):
+    """回归：服务端既不回 Content-Length 也不回 Content-Range 时，
+    必须靠登记表里声明的字节数兜底——否则截断文件会被当成语料固化。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY[:1000]
+    script["send_length"] = False
+    tmp = tmp_path / "x.part.csv"
+    with pytest.raises(corpora.IncompleteTransfer):
+        corpora._fetch(url, tmp, len(CORPUS_BODY))
+    assert tmp.stat().st_size == 1000
+
+
+def test_fetch_resumes_with_range_and_matches_byte_for_byte(serve, tmp_path):
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    tmp = tmp_path / "x.part.csv"
+    tmp.write_bytes(CORPUS_BODY[:70000])      # 预置半成品
+    corpora._fetch(url, tmp, 0)
+    assert script["seen"][0] == "bytes=70000-"   # 确实带了 Range
+    assert tmp.read_bytes() == CORPUS_BODY       # 拼接结果与原文逐字节一致
+
+
+def test_fetch_restarts_cleanly_when_server_ignores_range(serve, tmp_path):
+    """服务端不支持续传时必须以 wb 重写，绝不能在半成品后面追加。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    script["support_range"] = False
+    tmp = tmp_path / "x.part.csv"
+    tmp.write_bytes(b"garbage left by another source")
+    corpora._fetch(url, tmp, 0)
+    assert tmp.read_bytes() == CORPUS_BODY
+
+
+def test_fetch_rejects_more_bytes_than_expected(serve, tmp_path):
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    script["total"] = 500            # 自称总共只有 500 字节
+    tmp = tmp_path / "x.part.csv"
+    tmp.write_bytes(CORPUS_BODY[:100])   # 有半成品才会走 206 分支
+    with pytest.raises(ValueError, match="多于预期"):
+        corpora._fetch(url, tmp, 0)
+    assert not tmp.exists()          # 不可信，已丢弃
+
+
+def test_fetch_rejects_empty_response(serve, tmp_path):
+    url, script = serve
+    script["body"] = b""
+    tmp = tmp_path / "x.part.csv"
+    with pytest.raises(ValueError, match="响应为空"):
+        corpora._fetch(url, tmp, 0)
+
+
+def test_fetch_enforces_max_file_bytes(serve, tmp_path, monkeypatch):
+    """异常响应不能把磁盘写满。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    monkeypatch.setattr(corpora, "MAX_FILE_BYTES", 1000)
+    tmp = tmp_path / "x.part.csv"
+    with pytest.raises(ValueError, match="超过单文件上限"):
+        corpora._fetch(url, tmp, 0)
+    assert not tmp.exists()
+
+
+# ---------------------------------------------------------------- _fetch_validated（失败处置）
+
+def test_fetch_validated_discards_tmp_when_content_is_unusable(serve, tmp_path):
+    """内容坏（比如 200 的 HTML 错误页）必须**丢弃**临时文件，
     否则续传只会把一个坏文件补完，而 is_downloaded() 之后永远为真。"""
+    url, script = serve
+    script["body"] = HTML_PAGE
     dest = tmp_path / "waimai_10k.csv"
-    html = b"<!DOCTYPE html>\n<html><body>404 Not Found</body></html>\n"
-    monkeypatch.setattr(corpora, "_fetch", lambda url, tmp: tmp.write_bytes(html))
-    with pytest.raises(ValueError, match="解析"):
-        corpora._fetch_validated("https://x", dest, corpora.CORPORA["waimai_10k"])
+    with pytest.raises(corpora.UnusableContent):
+        corpora._fetch_validated(url, dest, corpora.CORPORA["waimai_10k"], 0)
     assert not corpora._tmp_path(dest).exists()
     assert not dest.exists()
 
 
-def test_fetch_validated_keeps_tmp_on_transfer_failure(tmp_path, monkeypatch):
-    """传输中断必须保留临时文件——这是弱网下拿下大文件的唯一活路。"""
+def test_fetch_validated_keeps_tmp_when_transfer_is_interrupted(serve, tmp_path):
+    """传输中断必须**保留**临时文件——这是弱网下拿下大文件的唯一活路。
 
-    def fake_fetch(url, tmp):
-        tmp.write_bytes(b"partial bytes")
-        raise corpora.IncompleteTransfer("boom")
-
+    与上一条恰好相反，所以这里用真实的传输中断来驱动（而不是打桩抛异常）：
+    打桩的异常发生在 try 之外，断言对任何异常都成立，等于没测。
+    """
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    script["content_length"] = len(CORPUS_BODY) + 100_000
     dest = tmp_path / "waimai_10k.csv"
-    monkeypatch.setattr(corpora, "_fetch", fake_fetch)
     with pytest.raises(corpora.IncompleteTransfer):
-        corpora._fetch_validated("https://x", dest, corpora.CORPORA["waimai_10k"])
-    assert corpora._tmp_path(dest).read_bytes() == b"partial bytes"
+        corpora._fetch_validated(url, dest, corpora.CORPORA["waimai_10k"], 0)
+    assert 0 < corpora._tmp_path(dest).stat().st_size < len(CORPUS_BODY)
+    assert not dest.exists()
+
+
+def test_fetch_validated_accepts_a_good_download(serve, tmp_path):
+    """正例：完整且能解析 → 原子改名落定，临时文件消失。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    dest = tmp_path / "waimai_10k.csv"
+    corpora._fetch_validated(url, dest, corpora.CORPORA["waimai_10k"], len(CORPUS_BODY))
+    assert dest.read_bytes() == CORPUS_BODY
+    assert not corpora._tmp_path(dest).exists()
+
+
+# ---------------------------------------------------------------- _download_one（续传与重试）
+
+def _file_spec(url: str) -> corpora.FileSpec:
+    return corpora.FileSpec(relpath="x.csv", urls=(url,), expected_bytes=len(CORPUS_BODY))
+
+
+def test_download_one_resumes_a_partial_from_the_same_source(serve, tmp_path):
+    """回归：上个进程留下的半成品必须被接上，而不是被无条件删掉重来。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    dest = tmp_path / "x.csv"
+    tmp = corpora._tmp_path(dest)
+    tmp.write_bytes(CORPUS_BODY[:70000])
+    corpora._src_marker(tmp).write_text(url, encoding="utf-8")
+
+    corpora._download_one("waimai_10k", _file_spec(url), dest, corpora.CORPORA["waimai_10k"])
+
+    assert script["seen"][0] == "bytes=70000-"       # 接着上次的位置要
+    assert dest.read_bytes() == CORPUS_BODY
+    assert not corpora._src_marker(tmp).exists()      # 标记已清理
+
+
+def test_download_one_restarts_when_partial_came_from_another_source(serve, tmp_path):
+    """换源时不能接着用：不同源的字节拼在一起是能通过长度校验的垃圾。"""
+    url, script = serve
+    script["body"] = CORPUS_BODY
+    dest = tmp_path / "x.csv"
+    tmp = corpora._tmp_path(dest)
+    tmp.write_bytes(b"bytes left by a different mirror")
+    corpora._src_marker(tmp).write_text("https://hf-mirror.com/datasets/别的源/x.csv", encoding="utf-8")
+
+    corpora._download_one("waimai_10k", _file_spec(url), dest, corpora.CORPORA["waimai_10k"])
+
+    assert script["seen"][0] is None                  # 第一次请求不带 Range，从头来
+    assert dest.read_bytes() == CORPUS_BODY
+
+
+def test_download_one_gives_up_after_repeated_no_progress(serve, tmp_path, monkeypatch):
+    """源已经死了就别硬耗：连续 STALL_LIMIT 次零推进即放弃。"""
+    url, script = serve
+    script["body"] = b""                      # 每次都失败且不留半成品
+    monkeypatch.setattr(corpora, "STALL_LIMIT", 2)
+    dest = tmp_path / "x.csv"
+
+    with pytest.raises(RuntimeError, match="全部下载源均失败"):
+        corpora._download_one("waimai_10k", _file_spec(url), dest, corpora.CORPORA["waimai_10k"])
+
+    # 2 次无进展就停，而不是打满 MAX_ATTEMPTS
+    assert len(script["seen"]) == 2
+
+
+def test_download_one_does_not_retry_a_source_whose_content_is_unusable(serve, tmp_path):
+    """内容不对时重下多少次都一样——必须立刻放弃该源，别白耗带宽。"""
+    url, script = serve
+    script["body"] = HTML_PAGE
+    dest = tmp_path / "x.csv"
+
+    with pytest.raises(RuntimeError, match="全部下载源均失败"):
+        corpora._download_one("waimai_10k", _file_spec(url), dest, corpora.CORPORA["waimai_10k"])
+
+    assert len(script["seen"]) == 1           # 只请求了一次
 
 
 # ---------------------------------------------------------------- 端到端（本地目录）
@@ -219,6 +479,17 @@ def test_load_rows_against_a_local_corpus_dir(tmp_path, monkeypatch):
     assert len(rows) == 3
     assert [r.label for r in rows] == [1, 0, 1]
     assert rows[0].group == ""      # 没有品类列时 group 为空串，不是 None
+
+
+def test_iter_rows_streams_without_loading_everything(tmp_path, monkeypatch):
+    monkeypatch.setattr(corpora.config, "DATA_ROOT", tmp_path)
+    target = tmp_path / "waimai_10k"
+    target.mkdir()
+    (target / "waimai_10k.csv").write_text(
+        "label,review\n" + "".join(f"1,第{i}条\n" for i in range(100)), encoding="utf-8"
+    )
+    rows = corpora.iter_rows("waimai_10k")
+    assert next(rows).text == "第0条"        # 生成器：取一条不必读完整个文件
 
 
 def test_load_rows_requires_download(tmp_path, monkeypatch):
