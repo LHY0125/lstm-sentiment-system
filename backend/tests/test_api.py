@@ -172,6 +172,22 @@ def test_batch_rejects_overlong_item(client, best_model_id):
     assert r.status_code == 400
 
 
+def test_inference_failure_returns_500_json(client, best_model_id, monkeypatch):
+    """推理层抛出未预期异常时，必须转成 500 + JSON，且不泄漏内部细节。
+
+    只回异常**类型名**：对排查够用，又不会把栈信息交给前端。
+    响应体做全等断言，「多带了字段」也算失败——契约就是这一个键。
+    """
+
+    def boom(_model_id):
+        raise RuntimeError("模拟崩溃")
+
+    monkeypatch.setattr(infer, "get_predictor", boom)
+    r = client.post("/api/predict", json={"text": "很好", "model_id": best_model_id})
+    assert r.status_code == 500
+    assert r.get_json() == {"error": "推理失败：RuntimeError"}
+
+
 def test_max_len_param_is_honored(client, best_model_id):
     """max_len 应影响分词截断长度。"""
     long_text = "很好 " * 50
