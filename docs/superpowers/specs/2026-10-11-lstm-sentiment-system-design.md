@@ -222,7 +222,7 @@ class SentimentLSTM(nn.Module):
 
 | 函数 | 职责 |
 |------|------|
-| `train_one(layers, hidden)` | 训练单个配置，返回 `(test_acc, history, params_count, train_time)`。**每轮在验证集上评估，取验证准确率最高的那轮权重** |
+| `train_one(layers, hidden)` | 训练单个配置，返回**指标字典**（`{model_id, layers, hidden_dim, embedding_dim, val_acc, test_acc, params, train_time_sec, vocab_size}`），供 `meta.json` 直接汇总。**每轮在验证集上评估，取验证准确率最高的那轮权重** |
 | `evaluate(loader)` | 指定数据集上的准确率（`@torch.no_grad()`） |
 | `visualize()` | 损失曲线 + 准确率曲线 → `输出/` |
 | `run_grid()` | 遍历 `GRID` 训练 6 组，逐一保存 `*.pt` |
