@@ -3397,7 +3397,13 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-createRoot(document.getElementById("root")!).render(
+const rootElement = document.getElementById("root");
+if (!rootElement) {
+  // 显式判空：Biome 的 style/noNonNullAssertion 不允许 `!`，
+  // 且把「空指针」变成一句可读的中文错误。
+  throw new Error("未找到 #root 挂载点：请检查 index.html");
+}
+createRoot(rootElement).render(
   <StrictMode>
     <App />
   </StrictMode>,
