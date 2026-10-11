@@ -52,7 +52,7 @@
   `EMBEDDING_DIM=128`、`DROPOUT=0.3`、`BATCH_SIZE=64`、`EPOCHS=15`、`LEARNING_RATE=1e-3`、
   `RANDOM_SEED=42`、`VAL_RATIO=0.1`、`CONTRIB_MAX_TOKENS=100`、`MAX_TEXT_CHARS=2000`；
   `config.GRID: list[tuple[int,int]]`（6 项）；`config.model_id(layers, hidden) -> str`；
-  `config.CKPT_PATH(model_id) -> Path`；`config.VOCAB_PATH: Path`；`config.META_PATH: Path`；
+  `config.ckpt_path(mid: str) -> Path`；`config.VOCAB_PATH: Path`；`config.META_PATH: Path`；
   `common.plot_font.setup_chinese_font() -> str | None`
 
 - [ ] **Step 1: 初始化仓库（依赖未决事项 U1）**
