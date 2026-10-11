@@ -290,12 +290,19 @@ class Predictor:
 | GET | `/api/health` | — | `{status: "ok"}` |
 | GET | `/api/models` | — | `[{id, layers, hidden_dim, embedding_dim, test_acc, params, train_time_sec}]` |
 | POST | `/api/predict` | `{text, model_id, max_len}` | `{label, prob_pos, prob_neg, tokens}` |
-| POST | `/api/explain` | `{text, model_id, max_len}` | `{label, prob_pos, prob_neg, contributions: [{token, delta}]}` |
+| POST | `/api/explain` | `{text, model_id, max_len}` | `{label, prob_pos, prob_neg, tokens, contributions: [{token, delta}]}` |
 | POST | `/api/batch` | `{texts: [], model_id, max_len}` | `[{text, prob_pos, prob_neg}]` |
 
 约定：
 
 - 所有响应概率为浮点数，`prob_pos + prob_neg == 1`（误差 < 1e-6）
+- **`/api/explain` 与 `/api/predict` 对同一 `(text, model_id, max_len)` 必须给出相同的
+  `label` / `prob_pos` / `prob_neg` / `tokens`。** `explain` 只在 `predict` 的结果之上
+  **追加**逐词贡献，绝不改变被预测的序列——`CONTRIB_MAX_TOKENS` 只限制「分析多少个位置」，
+  不截断被预测的输入。两个端点对同一输入给出不同答案是静默矛盾，不可接受。
+- `contributions` **按原句词序**返回，且只覆盖前 `CONTRIB_MAX_TOKENS` 个位置；
+  `tokens` 则是完整的（与 `predict` 相同）。前端用 `tokens` 做渲染骨架、
+  `contributions` 作 delta 查表，未覆盖的位置不着色，并提示「仅分析前 N 词」。
 - **后端不接收阈值参数**。阈值是"概率 → 标签"的纯前端映射（见第 7 节）
 - 错误响应：`{error: "<中文说明>"}` + 恰当的 HTTP 状态码
   （400 参数错误 / 404 模型不存在 / 500 内部错误）

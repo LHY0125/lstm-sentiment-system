@@ -1820,19 +1820,24 @@ class Predictor:
         base = self._probs_for_tokens(tokens, max_len)
 
         contributions = []
-        for i, token in enumerate(tokens):
+        for i in range(n):
             masked_ids = base_ids.copy()
             masked_ids[0, i] = config.UNK_IDX
             after = self._probs_for_ids(masked_ids, lengths)
-            contributions.append({"token": token, "delta": after - base})
+            contributions.append({"token": all_tokens[i], "delta": after - base})
 
         # 不排序：保持原句词序，与 predict 的 tokens 同序。
         # 前端要同时渲染「原句高亮」与「Top-N 排序表」——
         # 排序客户端零成本可做，而从乱序还原原句序不可能（jieba 在服务端）。
+        #
+        # 同时返回**完整** tokens（与 predict 一致）：contributions 只覆盖前
+        # CONTRIB_MAX_TOKENS 个位置，前端若拿它当词序列渲染，长文本会只高亮前 N 词、
+        # 尾部整段丢失。故 tokens 作渲染骨架，contributions 仅作 delta 查表。
         return {
             "label": 1 if base >= DEFAULT_THRESHOLD else 0,
             "prob_pos": base,
             "prob_neg": 1.0 - base,
+            "tokens": all_tokens,
             "contributions": contributions,
         }
 
@@ -2381,6 +2386,9 @@ export interface ExplainResponse {
   label: number;
   prob_pos: number;
   prob_neg: number;
+  /** 完整分词结果，与 predict 返回的 tokens 相同——渲染骨架用这个。
+   *  contributions 只覆盖前 CONTRIB_MAX_TOKENS 个位置，不能当词序列用。 */
+  tokens: string[];
   contributions: Contrib[];
 }
 
