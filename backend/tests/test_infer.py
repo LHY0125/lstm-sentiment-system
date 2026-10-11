@@ -21,6 +21,18 @@ from senti import config, data, infer
 # 下面这条评论的积极概率是 0.4491、未饱和，实测余量 0.516（好 −0.364 / 差 +0.152）。
 EXPLAIN_TEXT = "这家酒店位置很好，离地铁站近，但房间隔音太差，晚上吵得睡不着"
 
+# 用于「explain 与 predict 必须一致」的长文本夹具：前 100 词是中性填充，
+# 极性只出现在第 101 词之后。这样「截 100 词」与「截 max_len 词」会给出
+# **相反**的结论，缺陷才暴露得出来。
+#
+# 实测（lstm_l1_h256）：共 107 词，截 100 词 p=0.036347→消极、
+# 截 max_len 词 p=0.996449→积极，标签直接相反。
+#
+# 刻意不用「同一句话重复 N 遍」当夹具：实测那种文本两种截断长度只差 1.2e-06，
+# 标签也相同，用它对「截断长度不一致」这个缺陷几乎没有分辨力——
+# 这正是本缺陷长期潜伏的原因。
+LONG_TEXT = "酒店 " * 100 + "很好 非常满意 强烈推荐 很干净"
+
 
 @pytest.fixture(scope="module")
 def predictor():
@@ -157,6 +169,61 @@ def test_explain_respects_token_limit(predictor):
     long_text = "很好 " * 300
     r = predictor.explain(long_text)
     assert len(r["contributions"]) <= config.CONTRIB_MAX_TOKENS
+
+
+@pytest.mark.parametrize(
+    "text, expect_over_limit",
+    [
+        ("这家酒店位置很好，但房间隔音太差", False),
+        (LONG_TEXT, True),
+    ],
+    ids=["短文本", "超100词长文本"],
+)
+def test_explain_agrees_with_predict(predictor, text, expect_over_limit):
+    """同一输入，explain 与 predict 的结论必须完全一致。
+
+    spec §6.2 规定开启逐词贡献时前端**只**调 /api/explain（不再调 /api/predict），
+    所以 explain 若给出与 predict 不同的概率或标签，用户看到的就是
+    与「单条预测」自相矛盾的答案，前端无从解释、也无从修正。
+
+    实测 ChnSentiCorp 测试集 1200 条：135 条（11.25%）超过分析上限，
+    修复前其中 134 条的 prob_pos 与 predict 不同、14 条 label 直接相反。
+
+    长文本这一路是**关键**：短文本下两条路径恰好等价，看不出任何问题。
+    """
+    single = predictor.predict(text)
+    explained = predictor.explain(text)
+
+    # 前提写成可执行断言：长文本用例必须真的超过分析上限，
+    # 否则它与短文本用例重复，这条参数化对回归完全无感。
+    assert (len(single["tokens"]) > config.CONTRIB_MAX_TOKENS) is expect_over_limit, (
+        f"用例前提被破坏：实测 {len(single['tokens'])} 词，"
+        f"期望「超过上限」={expect_over_limit}。请调整文本长度，不要放宽断言。"
+    )
+
+    if expect_over_limit:
+        # 夹具的**分辨力**也要断言：它必须让「截 CONTRIB_MAX_TOKENS 词」与
+        # 「截 max_len 词」给出不同结论，否则即使 explain 又退回用短序列，
+        # 这条用例也测不出来（重复句夹具就是这样失效的）。
+        # 这里只走 predict 的公开接口，与 explain 的实现无关。
+        truncated = predictor.predict(text, max_len=config.CONTRIB_MAX_TOKENS)
+        assert truncated["label"] != single["label"], (
+            "夹具失去分辨力：截到 CONTRIB_MAX_TOKENS 与截到 max_len 得到相同标签，"
+            "本用例对「explain 用了更短的输入」已无感觉。请更换长文本夹具。"
+        )
+
+    # 先断结论再断附加字段：结论不一致是更严重的缺陷，让它先报错。
+    assert explained["label"] == single["label"], (
+        f"label 不一致：explain={explained['label']} predict={single['label']}"
+    )
+    assert explained["prob_pos"] == single["prob_pos"]
+    assert explained["prob_neg"] == single["prob_neg"]
+
+    # explain 必须自带完整词表：前端靠它渲染高亮句子，而它已不再调 /api/predict。
+    assert explained["tokens"] == single["tokens"]
+
+    # contributions 的上限是前向次数预算，不能随之放开。
+    assert len(explained["contributions"]) <= config.CONTRIB_MAX_TOKENS
 
 
 def test_vocab_size_mismatch_raises(predictor, monkeypatch):

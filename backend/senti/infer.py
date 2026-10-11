@@ -13,9 +13,12 @@ import torch
 from senti import config, data, model, train
 
 # 后端给出 label 时使用的默认阈值。
+# 数值本身住在 config（超参数字面量不得散落在业务模块里）；
+# 这里保留同名模块属性，是因为接口约定就是 `infer.DEFAULT_THRESHOLD`，
+# 直接删掉会打断按该名字导入的调用方。
 # 注意：阈值是「概率 → 标签」的纯映射，最终判定由前端完成，
 # 本字段只作参考，不参与任何计算。
-DEFAULT_THRESHOLD = 0.5
+DEFAULT_THRESHOLD = config.DEFAULT_THRESHOLD
 
 
 def list_models() -> list[dict]:
@@ -170,48 +173,62 @@ class Predictor:
         前端的着色依赖这个符号约定：delta < 0 记正向、delta > 0 记负向。
 
         用遮挡法而非 attention 权重：注意力反映信息的路由，不等于重要性。
-        遮挡法问的是反事实问题「缺了这个词，结果会变吗」，对任意模型都成立。
+        遮挡法问的是反事实问题「缺了这个词，结果会变吗」，对任意模型成立。
+        delta 的量级是**遮挡敏感度**，不是重要性排序：删掉主题/中性词同样会
+        扰动整句语境，其 |delta| 可能高于极性词（实测「位置/酒店/这家」排在前列）。
+        前端若要展示，措辞用「遮挡敏感度」。
 
-        **contributions 按原句词序返回**，与 predict 的 tokens 顺序一致。
+        **prob_pos / prob_neg / label 与 predict 完全一致**：base 是在
+        `tokenize(text)[:max_len]` 上算的，与 predict 用的是同一段输入。
+        CONTRIB_MAX_TOKENS 只限制「分析多少个词位」，不改变被预测的序列——
+        若用它去截断 base 的输入，长文本会得到与 predict 相反的概率和标签
+        （实测测试集 1200 条中 135 条超限、14 条标签直接相反），
+        而 spec §6.2 规定前端此时**只**调本接口，用户会看到自相矛盾的结论。
+
+        **contributions 按原句词序返回**，与返回的 tokens 顺序一致。
         不在此处按 |delta| 排序：前端要靠这个数组渲染「高亮句子」，
         预排序会把原句打散成一袋词、读不出句子；而客户端还原词序是不可能的
         （重新分词要 jieba，只在服务端）。排序是纯展示需求，客户端做是免费的。
-        客户端若只要 Top-N，自己按 |delta| 排一次即可。
+        客户端若要 Top-N，自己按 |delta| 排一次即可。
 
-        注意 explain 词数上限是 CONTRIB_MAX_TOKENS、predict 是 max_len。
-        当前配置下 CONTRIB_MAX_TOKENS(100) < max_len(150)，故文本长于 100 词时
-        contributions 是 predict 的 tokens 的**前缀**（有意省略尾部，不是丢词）。
+        **返回的 tokens 是完整词表**（同 predict），前端用它渲染高亮句子；
+        contributions 只覆盖前 CONTRIB_MAX_TOKENS 个词位，尾部词没有 delta 项
+        （不是 0，是**没有这一项**），渲染时应保持中性、不作着色。
 
         遮挡**直接改写索引值**为 config.UNK_IDX，而不是先把词列表里的字符串换成
         "<unk>" 再走词表查表。后者只在「词表里恰好没有 <unk> 这个字面词」时才正确；
         一旦某个语料把 <unk> 收进词表，遮挡位会被解析成一个**真实**词的索引，
         贡献度静默算错、不报错、也无从察觉。写索引从根上消除这种碰撞。
 
-        复杂度为 O(N) 次前向；参与分析的词数上限为 CONTRIB_MAX_TOKENS。
+        复杂度为 O(N) 次前向，N 上限为 CONTRIB_MAX_TOKENS。
         """
         max_len = max_len or self.max_len
-        tokens = data.tokenize(text)[: config.CONTRIB_MAX_TOKENS]
+        # 与 predict 取同一段输入：保证 prob_pos / label / tokens 三者与 predict 一致。
+        # CONTRIB_MAX_TOKENS 只用于限制下面的分析循环，不参与这里的截断。
+        all_tokens = data.tokenize(text)[:max_len]
 
-        base_ids, lengths = self._ids_for_tokens(tokens, max_len)
+        base_ids, lengths = self._ids_for_tokens(all_tokens, max_len)
         base = float(self._probs_for_ids(base_ids, lengths)[0])
 
-        # 只分析真正进入模型的位置。max_len 比 CONTRIB_MAX_TOKENS 更小时尾部词会被
-        # 截断，给它们算贡献恒为 0，那等于谎称「这个词没有影响」。
-        n = min(len(tokens), max_len)
+        # 只分析前 CONTRIB_MAX_TOKENS 个词位：这是前向次数的预算，不是输入长度。
+        n = min(len(all_tokens), config.CONTRIB_MAX_TOKENS)
 
         contributions = []
         for i in range(n):
             masked_ids = base_ids.copy()
             # 位置保持不变、只把该位换成 <unk>：这是「该词不可知」的反事实，
-            # 与原始序列等长，故各词的 delta 之间可以直接比较。
+            # 与原始序列等长，故各词的 delta 之间可以直接比较；
+            # 也与 base 用的是同一个序列，两者相减才有意义。
             masked_ids[0, i] = config.UNK_IDX
             after = float(self._probs_for_ids(masked_ids, lengths)[0])
-            contributions.append({"token": tokens[i], "delta": after - base})
+            contributions.append({"token": all_tokens[i], "delta": after - base})
 
         return {
             "label": 1 if base >= DEFAULT_THRESHOLD else 0,
             "prob_pos": base,
             "prob_neg": 1.0 - base,
+            # 完整词表：前端渲染高亮句子要用它，而它已不再调 /api/predict
+            "tokens": all_tokens,
             "contributions": contributions,
         }
 
