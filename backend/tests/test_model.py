@@ -2,8 +2,9 @@
 """LSTM 模型结构与形状的测试。
 
 全部用例都只搭随机初始化的小模型（词表 20、隐藏 8），不碰真实语料与训练，
-保证秒级反馈。张量索引一律取自 config（PAD_IDX / FIRST_WORD_IDX / OUTPUT_DIM），
-避免测试自己重钉一遍 config 拥有的取值。
+保证秒级反馈。占用 config 语义的取值（填充位、实词起点、输出维度）一律从 config 引用，
+避免测试自己重钉一遍 config 拥有的取值；用例里的 2、3、4 只是随手取的普通实词索引，
+不归 config 管。
 """
 
 import torch
@@ -33,11 +34,17 @@ def test_single_layer_builds():
     """单层 LSTM 传 dropout 会被 PyTorch 警告，实现里必须条件性置 0。"""
     m = _build(num_layers=1)
     assert m.lstm.num_layers == 1
+    # 必须直接盯住传给 nn.LSTM 的 dropout：只断言 num_layers 的话，
+    # 把实现里的 `else 0.0` 删掉这条也照样过，守卫就是空的。
+    assert m.lstm.dropout == 0.0, "单层必须把 dropout 置 0，否则 PyTorch 会警告"
 
 
 def test_two_layer_builds():
     m = _build(num_layers=2)
     assert m.lstm.num_layers == 2
+    # 反向守住：多层时 dropout 必须原样传给 nn.LSTM，
+    # 否则「条件性置 0」被写成「无条件置 0」也不会被发现。
+    assert m.lstm.dropout == config.DROPOUT, "多层必须保留 dropout"
 
 
 def test_tokens_beyond_length_do_not_affect_output():
@@ -63,6 +70,30 @@ def test_tokens_beyond_length_do_not_affect_output():
     assert torch.allclose(out_a, out_b, atol=1e-6), (
         "真实长度之后的词位影响了输出，说明取的不是 lengths-1 位的隐藏状态"
     )
+
+
+def test_each_sample_uses_its_own_length():
+    """批内每个样本必须取**各自**的末词，不能用批内统一长度。
+
+    batch=1 时「按本样本长度取」与「按批内最大长度取」必然等价，
+    所以上面那条回归测试测不出这一点。这里用批内长度不等的两条样本，
+    要求每一行都等于该行单独前向的结果——这是 view(1,-1,1).expand(...)
+    逐样本索引存在的全部意义。
+    """
+    m = _build().eval()
+    # 第 0 列 5 个实词；第 1 列只有 2 个实词，其后为 <pad>
+    ids = torch.tensor(
+        [[2, 3, 4, 7, 9], [5, 6, config.PAD_IDX, config.PAD_IDX, config.PAD_IDX]]
+    ).T   # (5, 2)
+    lengths = torch.tensor([5, 2])
+
+    with torch.no_grad():
+        batched = m(ids, lengths)
+        row0 = m(ids[:, 0:1], lengths[0:1])
+        row1 = m(ids[:, 1:2], lengths[1:2])
+
+    assert torch.allclose(batched[0], row0[0], atol=1e-6), "第 0 行未按自身长度取末词"
+    assert torch.allclose(batched[1], row1[0], atol=1e-6), "第 1 行未按自身长度取末词"
 
 
 def test_padding_index_excluded_from_gradient():
