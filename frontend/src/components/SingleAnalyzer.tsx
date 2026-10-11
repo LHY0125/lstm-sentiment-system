@@ -43,6 +43,10 @@ const EXAMPLES: { label: string; text: string }[] = [
 export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props) {
   const [text, setText] = useState("");
   const [probPos, setProbPos] = useState<number | null>(null);
+  // tokens 与 contributions 恒同生命周期（同为 null 或同为非 null）：前者是完整句，
+  // 后者只覆盖前 CONTRIB_MAX_TOKENS 个词位。Task 12 用 tokens 渲染整句、用 contributions
+  // 查表取 delta——少了 tokens，长句会被截断并把它未被分析的尾部当作「贡献为 0」渲染。
+  const [tokens, setTokens] = useState<string[] | null>(null);
   const [contributions, setContributions] = useState<Contrib[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,17 +64,21 @@ export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props
         // 不是两次顺序调用。
         const r = await fetchExplain(input, modelId, maxLen);
         setProbPos(r.prob_pos);
+        setTokens(r.tokens);
         setContributions(r.contributions);
       } else {
         const r = await fetchPredict(input, modelId, maxLen);
         setProbPos(r.prob_pos);
-        // 关掉逐词贡献后，上一次 explain 留下的高亮必须一起清掉，否则会显示与当前结果无关的旧数据
+        // 关掉逐词贡献后，上一次 explain 留下的高亮与词序列必须一起清掉，
+        // 否则会显示与当前结果无关的旧数据
+        setTokens(null);
         setContributions(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       // 出错时连旧结果一起清空：一条新鲜的错误信息旁边挂着上一次的概率条，比什么都不显示更糟
       setProbPos(null);
+      setTokens(null);
       setContributions(null);
     } finally {
       setBusy(false);
@@ -125,7 +133,15 @@ export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props
             // 0.5 阈值下算好的，而本界面的阈值是活的——用后端的值会让滑块「拖了没反应」
             label={labelOf(probPos, threshold)}
           />
-          {contributions && <TokenHighlight contributions={contributions} />}
+          {/* 高亮用 `useExplain` 在**渲染期派生**门控，而不是监听 props 变化去重置 state：
+              切换复选框不重跑 analyze()，旧高亮会一直挂到下次点「分析」。React 不鼓励
+              「用 effect 把 prop 变化写回 state」，派生门控是这个场景的正解。
+              「关→开」时高亮会重新出现，但那时展示的 probPos 正是该高亮的同一次分析结果，
+              二者一致，故不是陈旧数据。同时要求 tokens 非空——它与 contributions 同生命周期，
+              多这一项既让 TS 收窄，也让不变量万一被破坏时「什么都不渲染」而非静默渲染空句。 */}
+          {useExplain && tokens && contributions && (
+            <TokenHighlight tokens={tokens} contributions={contributions} />
+          )}
         </>
       )}
     </div>
