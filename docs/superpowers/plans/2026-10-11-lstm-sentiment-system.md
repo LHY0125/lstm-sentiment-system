@@ -3419,7 +3419,7 @@ Expected：页面加载，模型下拉有 6 个选项，可完成以下检查。
 - [ ] **Step 5: 写 `README.md`**
 
 沿用兄弟项目惯例，**必须包含实测结果表格与「重新搭建环境」章节**：
-```markdown
+````markdown
 # 基于 LSTM 的网络评论情感分类系统
 
 河南理工大学计算机学院《神经网络与深度学习》课程设计 · 选题(3)
@@ -3503,14 +3503,14 @@ cd backend; ..\.venv\Scripts\python.exe -m pytest -v
 
 - 设计：`docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`
 - 计划：`docs/superpowers/plans/2026-10-11-lstm-sentiment-system.md`
-```
+````
 **注意**：README 中带尖括号的部分必须替换为 Task 5 实际跑出的数值，
 不得留占位符。
 
 - [ ] **Step 6: 写 `CLAUDE.md`**
 
 沿用兄弟项目惯例（给 AI 助手的项目说明）：
-```markdown
+````markdown
 # CLAUDE.md
 
 本目录是《神经网络与深度学习》课程设计——「基于 LSTM 的网络评论情感分类系统」。
@@ -3556,7 +3556,7 @@ cd backend; ..\.venv\Scripts\python.exe -m pytest -v
 - 后端：`pytest`（纯函数 + 接口契约）
 - 数据管线：`--overfit-test`，必须能过拟合
 - 前端：`pnpm typecheck` + `pnpm build` + 浏览器人工走通
-```
+````
 
 - [ ] **Step 7: 全量测试与构建**
 
