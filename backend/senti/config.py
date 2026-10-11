@@ -11,7 +11,8 @@ from pathlib import Path
 # __file__ = <项目根>/backend/senti/config.py
 # parents[0]=senti  parents[1]=backend  parents[2]=项目根
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "数据集" / "ChnSentiCorp"
+DATA_ROOT = PROJECT_ROOT / "数据集"          # 全部语料的共同根目录（已在 .gitignore 中排除）
+DATA_DIR = DATA_ROOT / "ChnSentiCorp"      # 主训练语料（data.py 专用）
 ARTIFACT_DIR = PROJECT_ROOT / "backend" / "artifacts"
 OUTPUT_DIR = PROJECT_ROOT / "backend" / "输出"
 
