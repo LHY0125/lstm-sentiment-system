@@ -172,6 +172,16 @@ class Predictor:
         用遮挡法而非 attention 权重：注意力反映信息的路由，不等于重要性。
         遮挡法问的是反事实问题「缺了这个词，结果会变吗」，对任意模型都成立。
 
+        **contributions 按原句词序返回**，与 predict 的 tokens 顺序一致。
+        不在此处按 |delta| 排序：前端要靠这个数组渲染「高亮句子」，
+        预排序会把原句打散成一袋词、读不出句子；而客户端还原词序是不可能的
+        （重新分词要 jieba，只在服务端）。排序是纯展示需求，客户端做是免费的。
+        客户端若只要 Top-N，自己按 |delta| 排一次即可。
+
+        注意 explain 词数上限是 CONTRIB_MAX_TOKENS、predict 是 max_len。
+        当前配置下 CONTRIB_MAX_TOKENS(100) < max_len(150)，故文本长于 100 词时
+        contributions 是 predict 的 tokens 的**前缀**（有意省略尾部，不是丢词）。
+
         遮挡**直接改写索引值**为 config.UNK_IDX，而不是先把词列表里的字符串换成
         "<unk>" 再走词表查表。后者只在「词表里恰好没有 <unk> 这个字面词」时才正确；
         一旦某个语料把 <unk> 收进词表，遮挡位会被解析成一个**真实**词的索引，
@@ -198,8 +208,6 @@ class Predictor:
             after = float(self._probs_for_ids(masked_ids, lengths)[0])
             contributions.append({"token": tokens[i], "delta": after - base})
 
-        # 按贡献强度降序，前端只展示前若干条
-        contributions.sort(key=lambda c: -abs(c["delta"]))
         return {
             "label": 1 if base >= DEFAULT_THRESHOLD else 0,
             "prob_pos": base,

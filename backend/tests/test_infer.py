@@ -89,6 +89,46 @@ def test_explain_returns_contributions_for_each_token(predictor):
     assert len(r["contributions"]) == n_tokens
 
 
+def test_explain_contributions_preserve_sentence_order(predictor):
+    """contributions 必须与原句词序一致——前端要靠它渲染高亮句子。
+
+    排序客户端可做（免费），从乱序还原原句序不可能（重新分词要 jieba，只在服务端）。
+    故服务端返回的顺序必须是保序的。
+
+    本条覆盖「文本短于两条截断上限」的情形：此时 predict 与 explain 看到的是
+    同一个词列表，两者应当**全等**。长于 CONTRIB_MAX_TOKENS 的前缀情形
+    由下一条测试专门覆盖——不要在这里用断言放宽来「兼容」两者。
+    """
+    text = "这家酒店位置很好，但房间隔音太差"
+    tokens = predictor.predict(text)["tokens"]
+    # 前提断言：把「本条只覆盖短文本」写成可执行的条件，
+    # 将来有人换成长文本时这里会响亮失败，而不是悄悄比较两个不同的列表。
+    assert len(tokens) <= config.CONTRIB_MAX_TOKENS, (
+        f"本测试前提是文本不超过 {config.CONTRIB_MAX_TOKENS} 词，实测 {len(tokens)} 词；"
+        f"超限时 explain 只分析前缀，应改用下面的前缀测试。"
+    )
+
+    contribs = predictor.explain(text)["contributions"]
+    assert [c["token"] for c in contribs] == tokens
+
+
+def test_explain_contributions_are_prefix_when_text_over_limit(predictor):
+    """文本长于 CONTRIB_MAX_TOKENS 时，contributions 是 predict 词列表的**前缀**。
+
+    explain 的分析上限是 CONTRIB_MAX_TOKENS、predict 的截断上限是 max_len，
+    当前配置下 100 < 150，故超限文本的尾部词根本不参与分析——这是有意的
+    复杂度控制（O(N) 次前向），不是丢词。把这条差异钉死，避免有人为了
+    「让两边全等」而把 explain 的上限抬到 max_len、悄悄把代价乘上 1.5 倍。
+    """
+    text = "这家酒店位置很好，但房间隔音太差，" * 40
+    tokens = predictor.predict(text)["tokens"]
+    assert len(tokens) > config.CONTRIB_MAX_TOKENS, "前提：文本必须超过分析上限"
+
+    contribs = predictor.explain(text)["contributions"]
+    n = min(len(tokens), config.CONTRIB_MAX_TOKENS)
+    assert [c["token"] for c in contribs] == tokens[:n]
+
+
 def test_explain_direction_is_correct(predictor):
     """遮挡强正向词后，积极概率应当下降 → delta < 0。
 
