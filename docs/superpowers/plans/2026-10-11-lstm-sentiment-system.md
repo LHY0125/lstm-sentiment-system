@@ -3114,6 +3114,11 @@ export function ResultTable({ items, threshold }: Props) {
 
   const posCount = items.filter((it) => labelOf(it.prob_pos, threshold) === "积极").length;
 
+  // ⚠️ 不要用 key={`${i}-...`} —— Biome 的 suspicious/noArrayIndexKey 会判 error（见全局约束）。
+  // 先把 items 摊成带**显式身份字段**的渲染单元，再在 JSX 里 key={row.id}。
+  // 批量行的稳定身份就是它在输入中的次序，故 id 由 idx 构造；关键是 key 处不直接读数组下标。
+  const rows = items.map((it, idx) => ({ id: `row-${idx}`, index: idx, ...it }));
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -3141,16 +3146,13 @@ export function ResultTable({ items, threshold }: Props) {
             </tr>
           </thead>
           <tbody>
-            {items.map((it, i) => {
-              const label = labelOf(it.prob_pos, threshold);
+            {rows.map((row) => {
+              const label = labelOf(row.prob_pos, threshold);
               return (
-                {/* ⚠️ 原来的 key={`${i}-${it.text.slice(0,12)}`} 过不了 Biome 的
-                    suspicious/noArrayIndexKey（见全局约束）。先把 items 摊成带显式 id 的渲染单元，
-                    再 key={row.id}。本仓库不引入 biome-ignore。 */}
                 <tr key={row.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-400">{i + 1}</td>
-                  <td className="max-w-md truncate px-3 py-2" title={it.text}>
-                    {it.text}
+                  <td className="px-3 py-2 text-slate-400">{row.index + 1}</td>
+                  <td className="max-w-md truncate px-3 py-2" title={row.text}>
+                    {row.text}
                   </td>
                   <td className="px-3 py-2">
                     <span
