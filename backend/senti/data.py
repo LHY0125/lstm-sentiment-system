@@ -149,13 +149,21 @@ def _parse_label(raw: object, record_no: int) -> int:
 
     这里刻意「失败关闭」。语料里出现意料之外的取值时必须炸掉：
     静默把未知标签当成积极会持续污染训练集，而且事后极难发现。
+
+    注意必须先判「是不是整数」再取整：直接 int(float(x)) 会把 1.5 截断成 1，
+    截断后的值正好落在白名单里，等于绕过下面那道校验、又变回静默错标。
     """
     try:
-        # 先过一遍 float，让 "1.0" / 0.0 这类数值写法也能归一化成 "1" / "0"
-        normalized = str(int(float(str(raw).strip())))
+        value = float(str(raw).strip())
     except (TypeError, ValueError, OverflowError):
         raise ValueError(f"语料第 {record_no} 条记录标签无法解析：{raw!r}") from None
 
+    if not value.is_integer():
+        raise ValueError(
+            f"语料第 {record_no} 条记录标签不是整数：{raw!r}（期望 0 / 1 / -1）"
+        )
+
+    normalized = str(int(value))
     if normalized not in _LABEL_MAP:
         raise ValueError(
             f"语料第 {record_no} 条记录标签取值非法：{raw!r}（期望 0 / 1 / -1）"

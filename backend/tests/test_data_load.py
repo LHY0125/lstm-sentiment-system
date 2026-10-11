@@ -108,7 +108,15 @@ def test_label_parsing_accepts_known_encodings():
     assert data._parse_label(" 0.0 ", 0) == 0
 
 
-@pytest.mark.parametrize("bad", ["2", "-2", "positive", "", "nan", None, "1e9"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "2", "-2", "positive", "", "nan", None, "1e9",
+        # 小数必须被拒：若先取整再校验，1.5 会被截断成 1、0.5 变成 0，
+        # 截断值恰好落在白名单里，等于绕过校验又变回静默错标。
+        "1.5", "0.5", "-0.5", "1e-9",
+    ],
+)
 def test_unknown_label_raises(bad):
     """标签映射必须失败关闭：把未知取值静默当成积极会持续污染训练集。"""
     with pytest.raises(ValueError, match="标签"):
