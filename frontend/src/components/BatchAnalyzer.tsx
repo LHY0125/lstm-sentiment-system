@@ -1,7 +1,7 @@
 import Papa from "papaparse";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { fetchBatch } from "../api/client";
-import { type BatchItem, MAX_BATCH_SIZE } from "../types";
+import { type BatchItem, MAX_BATCH_SIZE, MAX_TEXT_CHARS } from "../types";
 import { ResultTable } from "./ResultTable";
 
 interface Props {
@@ -9,15 +9,6 @@ interface Props {
   maxLen: number;
   threshold: number;
 }
-
-/** 单条文本的字符数上限，与后端 `senti/config.py` 的 `MAX_TEXT_CHARS` 一致。
- *
- *  跨边界常量：后端 `senti/api.py` 会对**任一**超长文本回 400（`types.ts` 的
- *  `MAX_BATCH_SIZE` 同理）。这里这份只用于**提前拦**，两边必须一起改——只改一边的后果是
- *  前端放行、后端拒绝。
- *
- *  放在本文件而不是 `types.ts`：目前只有批量面板需要它（单条输入框本来就粘不下 2000 字）。 */
-const MAX_TEXT_CHARS = 2000;
 
 /** 认定为「文本列」的表头名。比较前统一转小写，故 ASCII 名只列小写形式。 */
 const TEXT_COLUMN_NAMES = ["text", "文本", "评论", "content"];
@@ -96,6 +87,15 @@ export function extractTexts(csvText: string): CsvParse {
   };
 }
 
+/** 与后端 `len(t)` 对齐的字符计数：**码点数**，不是 UTF-16 码元数。
+ *
+ *  JS 的 `String.length` 数的是 UTF-16 码元，一个增补平面字符（emoji 等）算 **2**；
+ *  Python 的 `len()` 数码点，同一个字符算 **1**。直接用 `.length` 会把「1001 个 emoji」
+ *  这种输入判成 2001 字而在本地拒掉——方向是安全的（本地只会更严，后端那个 400 永远漏不出来），
+ *  但那是**假拦截**：一句本来合法的输入被自己的前端挡住，用户无从理解。
+ *  摊成数组再取长度就是码点数。 */
+const charCount = (text: string): number => [...text].length;
+
 /** 请求发出**之前**在本地说清越界在哪，以及越了多少；两条上限都没踩到就返回 null。
  *
  *  后端两条上限都会回 400，而往返一次只为换一句报错，既花用户的时间也占服务端资源。
@@ -110,10 +110,12 @@ export function limitViolation(list: string[]): string | null {
       list.length - MAX_BATCH_SIZE
     } 条）。请删减后重试。`;
   }
-  const over = list.filter((t) => t.length > MAX_TEXT_CHARS);
+  // 报给用户的字数也用 charCount，与判定口径同一把尺子——否则「2001 字」这句提示
+  // 会和用户数出来的字数对不上（他数的是字符，我们量的是码元）
+  const over = list.filter((t) => charCount(t) > MAX_TEXT_CHARS);
   if (over.length > 0) {
-    const at = list.findIndex((t) => t.length > MAX_TEXT_CHARS) + 1;
-    return `第 ${at} 条有 ${over[0].length} 字，超过单条上限 ${MAX_TEXT_CHARS} 字${
+    const at = list.findIndex((t) => charCount(t) > MAX_TEXT_CHARS) + 1;
+    return `第 ${at} 条有 ${charCount(over[0])} 字，超过单条上限 ${MAX_TEXT_CHARS} 字${
       over.length > 1 ? `（共 ${over.length} 条超长）` : ""
     }。请拆分或缩短后重试。`;
   }
@@ -133,6 +135,9 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 隐藏的文件输入只被「或上传 CSV」按钮用 click() 触发，DOM 引用就够，不需要进 state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // 每次渲染都从 textarea 现推，不另存一份「待分析文本」。存了就会有两个真相
   // （手打的与 CSV 来的），早晚对不上——这正是 SingleAnalyzer 里不复制 props 的同一条理由。
   const texts = raw
@@ -151,6 +156,10 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
 
   async function analyze() {
     if (!texts.length) return;
+    // 双保险：按钮在 busy 时已 disabled，但两个极快的点击有可能都通过 disabled 的判定
+    // （React 的状态更新到下帧才反映到 DOM 上）。重入会让两个响应乱序落地、
+    // 表格显示的是**先发出**的那次结果。
+    if (busy) return;
     const violation = limitViolation(texts);
     if (violation) {
       fail(violation);
@@ -169,6 +178,16 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
   }
 
   async function onFile(file: File) {
+    // 请求在飞的时候拒收文件。否则交错是：onFile 先清空 items 并挂上「已从 x.csv 读取 N 条」，
+    // 然后在飞的响应落地、把**上一批文本**的结果填进 items——表格自身看似自洽（每行渲染自己的
+    // text），但它是挂着 A 文件通知的 B 结果，而且导出按钮会照样把它导出。
+    // 这条守卫是真正承重的：「上传」按钮的 disabled 只在点击那一刻判定，而文件对话框可能在
+    // 点「分析」之前就打开了，用户选完文件时 busy 才变成 true。
+    // 静默返回是刻意的：此刻唯一的替代是弹一条错误，而错误会与随后落地的**新结果**同屏并列
+    // （见 fail() 的注释——那是本组件一直在避免的形态）。按钮在 busy 期间本来是灰的，
+    // 用户重试一次即可。
+    if (busy) return;
+
     let content: string;
     try {
       content = await file.text();
@@ -235,22 +254,33 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
           {busy ? "分析中…" : `分析（${texts.length} 条）`}
         </button>
 
-        <label className="cursor-pointer text-sm text-slate-500 underline hover:text-slate-800">
+        {/* 用真实 <button> 去 click() 隐藏的文件输入，而不是「<label> 包住 <input>」。
+            后者把 input 自己当成那个控件，而它被 display:none 隐藏后就退出了 tab 序列——
+            键盘用户因此**完全够不到**上传，而这是全应用唯一的上传入口（label 只帮得到鼠标）。
+            换成按钮后，键盘与读屏拿到的是一个有文字、有焦点环、可聚焦的普通控件。 */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+          className="text-sm text-slate-500 underline hover:text-slate-800
+                     disabled:cursor-not-allowed disabled:opacity-40"
+        >
           或上传 CSV
-          <input
-            type="file"
-            accept=".csv,.txt"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              // 立刻清空 input 的值：浏览器只在值真的变化时才派发 change，
-              // 不清的话「改完 CSV 再传同一个文件名」会静默无反应。
-              // 先取出 File 再清空是安全的——File 是独立对象，不随 input 的值消失。
-              e.target.value = "";
-              if (f) void onFile(f);
-            }}
-          />
-        </label>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.txt"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            // 立刻清空 input 的值：浏览器只在值真的变化时才派发 change，
+            // 不清的话「改完 CSV 再传同一个文件名」会静默无反应。
+            // 先取出 File 再清空是安全的——File 是独立对象，不随 input 的值消失。
+            e.target.value = "";
+            if (f) void onFile(f);
+          }}
+        />
       </div>
 
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}

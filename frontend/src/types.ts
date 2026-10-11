@@ -61,3 +61,13 @@ export function labelOf(probPos: number, threshold: number = DEFAULT_THRESHOLD):
  *  跨边界常量：后端 `senti/api.py` 独立持有一份 MAX_BATCH_SIZE 并在超限时回 400。
  *  只改一边的后果是前端放行、后端拒绝——要改必须两边一起改。 */
 export const MAX_BATCH_SIZE = 1000;
+
+/** 单条文本的字符数上限（**码点**数，不是 UTF-16 码元数），与后端 `senti/config.py` 的
+ *  `MAX_TEXT_CHARS` 一致。
+ *
+ *  跨边界常量，与上面的 MAX_BATCH_SIZE 同一套路：后端 `senti/api.py` 会对**任一**超长文本回
+ *  400，前端这份只用于**提前拦**，两边必须一起改。
+ *
+ *  计数口径也必须对齐：Python 的 `len()` 数码点，JS 的 `String.length` 数 UTF-16 码元——
+ *  一个 emoji 分别是 1 和 2。比对时要用码点数（见 `BatchAnalyzer` 的 `charCount`）。 */
+export const MAX_TEXT_CHARS = 2000;
