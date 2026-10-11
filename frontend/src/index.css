@@ -2,7 +2,7 @@
 
 /* 逐词贡献高亮用到的三个色阶变量，供 TokenHighlight 组件引用 */
 :root {
-  --contrib-pos: oklch(0.72 0.17 150);   /* 积极贡献：绿 */
-  --contrib-neg: oklch(0.66 0.2 25);     /* 消极贡献：红 */
+  --contrib-pos: oklch(0.62 0.15 250);   /* 积极贡献：蓝 */
+  --contrib-neg: oklch(0.68 0.16 55);    /* 消极贡献：橙 */
   --contrib-neutral: oklch(0.92 0 0);    /* 无明显贡献：灰 */
 }

@@ -3543,7 +3543,7 @@ Expected：页面加载，模型下拉有 6 个选项，可完成以下检查。
 
 ## 数据集
 
-ChnSentiCorp（谭松波中文酒店评论语料），来源与划分见 `backend/senti/data.py`。
+ChnSentiCorp（中文情感分析语料，含酒店、电脑/电子、图书三域），沿用其原生 9600/1200 划分；来源见 `backend/senti/data.py`。
 
 ## 环境
 

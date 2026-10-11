@@ -26,7 +26,7 @@ type Polarity = "pos" | "neg" | "neutral";
 const POLARITY_LABEL: Record<Polarity, string> = {
   pos: "积极",
   neg: "消极",
-  neutral: "无方向",
+  neutral: "无变化",
 };
 
 /** delta → 方向。**全组件唯一一处判定**：着色、表格文字、悬停/读屏文案都从这里取，
@@ -89,11 +89,11 @@ function describe(polarity: Polarity, delta: number): string {
 /** 依据方向取**填充色**。
  *
  *  delta 定义为「删词后的积极概率 − 原始积极概率」：
- *    delta < 0  → 该词推动「积极」，绿色
- *    delta > 0  → 该词推动「消极」，红色
- *    delta = 0  → **无方向**，中性灰（不是「偏消极」，见 Polarity 的说明）
+ *    delta < 0  → 该词推动「积极」，蓝色
+ *    delta > 0  → 该词推动「消极」，橙色
+ *    delta = 0  → **无变化**，中性灰（不是「偏消极」，见 Polarity 的说明）
  *
- *  用发散色阶（绿—灰—红）而非单一色阶，因为贡献是有方向的量，
+ *  用发散色阶（蓝—灰—橙）而非单一色阶，因为贡献是有方向的量，
  *  单色阶会把「强烈积极」和「强烈消极」画成同一个样子。 */
 function background(polarity: Polarity, intensity: number): string {
   if (polarity === "neutral") {
@@ -215,7 +215,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
           )}
         </p>
         <p className="mt-2 text-xs text-slate-400">
-          绿色 = 推高积极判定；红色 = 推高消极判定；颜色越深影响越大。灰色 = 本次遮挡没有产生
+          蓝色 = 推高积极判定；橙色 = 推高消极判定；颜色越深影响越大。灰色 = 本次遮挡没有产生
           可分辨的变化（删去该词后概率不变）——这不等于「模型认为它中性」：若该词不在词表内，
           遮挡本身是空操作（改写前后序列完全相同，delta 字面为 0），这次测量什么都没测到。
           悬停可看具体数值。
@@ -245,7 +245,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
             <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
               <th className="py-1 font-normal">词</th>
               <th className="py-1 text-right font-normal">影响</th>
-              {/* 方向列写「积极/消极/无方向」而不是只放一个色块：颜色不能是唯一的语义通道 */}
+              {/* 方向列写「积极/消极/无变化」而不是只放一个色块：颜色不能是唯一的语义通道 */}
               <th className="py-1 text-right font-normal">方向</th>
             </tr>
           </thead>

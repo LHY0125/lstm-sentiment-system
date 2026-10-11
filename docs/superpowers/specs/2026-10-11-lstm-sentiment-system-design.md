@@ -398,7 +398,7 @@ frontend/src/
 
 | 项 | 内容 |
 |----|------|
-| 数据集 | ChnSentiCorp（谭松波中文酒店评论语料） |
+| 数据集 | ChnSentiCorp（中文情感分析语料，含酒店、电脑/电子、图书三域） |
 | 主下载源 | `hf-mirror.com`（已验证可达） |
 | 备选源 | `raw.githubusercontent.com`（已验证可达）、`gitee.com`（已验证可达） |
 | 不可用 | `huggingface.co` 直连（已验证不可达） |

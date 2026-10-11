@@ -266,7 +266,7 @@ def create_app() -> Flask:
             # 于是只要放行，/api/nope 会拿到 200 + 一份 index.html、
             # GET /api/predict 会拿到 200 而不是 405——静默废掉 Task 7 定下的 JSON 错误契约。
             # 更坏的是它**只在 dist/ 存在时才发作**，也就是恰好演示的那一刻。
-            if subpath.startswith("api/"):
+            if subpath == "api" or subpath.startswith("api/"):
                 # 这里比「一律 abort(404)」多分一层：路径在路由表里注册过、只是方法不对时，
                 # 必须回 405 并带上 RFC 9110 要求的 Allow，与没有兜底路由时逐字节一致。
                 # 少了这一层，`GET /api/predict` 会从 405 退化成 404，
