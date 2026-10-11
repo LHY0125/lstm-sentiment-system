@@ -93,12 +93,27 @@ export default function App() {
                   结果与在飞请求，切回来时会拿旧结果唬人。卸载顺带把它的局部状态一起丢掉，
                   这是这里需要的行为。 */}
               {tab === "single" ? (
-                <SingleAnalyzer
-                  modelId={modelId}
-                  maxLen={maxLen}
-                  useExplain={useExplain}
-                  threshold={threshold}
-                />
+                <div className="flex flex-col gap-3">
+                  {/* 「示例」按钮上的三个标签是**句子的大意**，不是标准答案。
+                      这句话必须留在界面里：模型只有 6 组权重、语料是酒店评论，
+                      同一句在不同模型下会给出相反的标签（实测「正面」那句在默认模型下
+                      被判为消极 0.4234，换一个模型是积极 0.9955）。
+                      不写这句，演示时第一个被问到的就是「你这系统是不是坏了」——
+                      而它没坏，是单句判定的正常波动，不该被当成缺陷去掩盖。
+                      刻意不点名具体模型：那会把一句关于方法论的说明写成版本相关的八卦，
+                      换一次 checkpoint 就过期。 */}
+                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                    「正面 / 负面 /
+                    中性示例」按钮只是演示用的句子，不是正确答案。单句判定随所选模型的
+                    权重变化，同一句在不同模型下可能给出相反的标签——那是模型之间的差异，不是界面出错。
+                  </p>
+                  <SingleAnalyzer
+                    modelId={modelId}
+                    maxLen={maxLen}
+                    useExplain={useExplain}
+                    threshold={threshold}
+                  />
+                </div>
               ) : (
                 <BatchAnalyzer modelId={modelId} maxLen={maxLen} threshold={threshold} />
               )}

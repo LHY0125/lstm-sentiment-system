@@ -244,7 +244,12 @@ def create_app() -> Flask:
     if dist.exists():
 
         def _api_path_methods(subpath: str) -> list[str]:
-            """`/api/<subpath>` 在路由表里注册过的方法（没有则空列表）。"""
+            """`/api/<subpath>` 在路由表里注册过的方法（没有则空列表）。
+
+            按**字面**规则串比较，故带参数的规则（如 `/api/x/<id>`）在这里认不出来，
+            那种路径会退化成 404 而不是 405。本项目的 5 条路由都是静态路径，触不到这个边界；
+            将来若加了带参路由，这里要换成 `rule.match()` 之类的真匹配。
+            """
             return sorted(
                 method
                 for rule in app.url_map.iter_rules()

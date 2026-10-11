@@ -63,8 +63,14 @@ src/
 ├── hooks/useModels.ts     # 拉模型列表并按验证准确率排序
 ├── types.ts               # 与后端契约一一对应的类型 + 全部跨边界常量
 ├── App.tsx                # 组装：页签、模型选择、设置与两个面板
-└── index.css              # Tailwind 入口 + 逐词贡献的三个色阶变量
+├── main.tsx               # 入口：挂载 #root，显式判空后渲染 <App />
+├── index.css              # Tailwind 入口 + 逐词贡献的三个色阶变量
+├── App.css                # Vite 脚手架残留样式（当前无组件引用），保留未删
+└── assets/                # 同上：脚手架的 hero.png / react.svg / vite.svg
 ```
+
+本文件只讲前端。整套系统的说明（系统组成、数据集、实测结果、重建环境的完整步骤）
+在仓库根的 `README.md`；给 AI 助手的项目说明与改动禁区在 `CLAUDE.md`。
 
 ## 改动前必读的几条约定
 
