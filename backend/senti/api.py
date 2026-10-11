@@ -194,11 +194,22 @@ def create_app() -> Flask:
 
         类注册同时也是安全的：Flask 沿异常的 MRO 就近查找处理器，
         HTTPException 比 Exception 更近，故框架错误不会落进兜底。
+
+        **框架给出的响应头必须跟过来**：405 的 `Allow`、401 的 `WWW-Authenticate`
+        都住在 `get_headers()` 里，换掉响应体时很容易顺手把它们丢掉——
+        而 RFC 9110 要求 405 必须带 `Allow`，缺了就是违反 HTTP 语义。
+        实测：不搬运时 `Allow` 为 `None`（Werkzeug 默认响应里是 `POST`）。
+        `Content-Type` / `Content-Length` 例外，那两个必须留给 jsonify 的结果，
+        否则 JSON 体被标成 text/html，前端的 res.json() 照样炸。
         """
         message = _HTTP_ERROR_MESSAGES.get(err.code, f"请求被拒绝（HTTP {err.code}）")
-        # err.code 理论上可为 None（Werkzeug 对无码异常按 500 处理），
-        # 显式兜一下，免得把一个 None 塞进 HTTP 状态码。
-        return _error(message, err.code or 500)
+        # err.code 理论上可为 None（Werkzeug 对无码异常按 500 处理），显式兜一下，
+        # 免得把一个 None 塞进 HTTP 状态码。
+        response, status = _error(message, err.code or 500)
+        for key, value in err.get_headers():
+            if key not in ("Content-Type", "Content-Length"):
+                response.headers[key] = value
+        return response, status
 
     @app.errorhandler(Exception)
     def _unhandled(err: Exception) -> ErrorResponse:

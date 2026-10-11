@@ -207,11 +207,19 @@ def test_wrong_method_returns_405_json(client):
 
     这条与上一条是两件事：404 是「路径不存在」，405 是「路径存在但方法不对」，
     前端 typo 掉一个方法时，它得能区分这两种情况。
+
+    `Allow` 头一并钉住：405 换掉响应体时最容易丢掉的就是它，
+    而 RFC 9110 要求 405 必须带 `Allow`——丢了就是违反 HTTP 语义，
+    与「体的格式」无关，属于另一类错误。
+    只断言「包含 POST」而不是「等于 POST」：CORS 会给每条路由注册 OPTIONS
+    以支持预检，实测该头是 `POST, OPTIONS`，这是对的，不该被测试挡掉。
     """
     r = client.get("/api/predict")
     assert r.status_code == 405
     assert r.content_type.startswith("application/json"), f"实测 {r.content_type}"
     assert "error" in r.get_json()
+    allow = r.headers.get("Allow", "")
+    assert "POST" in allow, f"405 丢了 Allow 头，实测 {allow!r}"
 
 
 def test_unhandled_error_outside_inference_returns_500_json(client, monkeypatch):
