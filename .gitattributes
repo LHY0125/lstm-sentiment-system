@@ -1,0 +1,10 @@
+# 统一行尾为 LF。
+#
+# 为什么需要这一条：本机 git 全局配置为 core.autocrlf=true，而仓库原先没有
+# .gitattributes，于是**任何一次全新 checkout 都会把源码落成 CRLF**。
+# 前端的 Biome 格式化器按 LF 校验（`pnpm lint` = `biome check src`），
+# 因此那种检出状态下 `pnpm lint` 必然失败——仓库"clone 下来就 build 不过"。
+# .gitattributes 的优先级高于 core.autocrlf，这一行让检出结果与提交内容一致。
+#
+# text=auto 让 git 自动识别二进制文件（如 docs 下的 PDF），不做换行转换。
+* text=auto eol=lf
