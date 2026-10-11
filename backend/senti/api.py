@@ -6,6 +6,7 @@
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from senti import config, infer
 
@@ -18,6 +19,13 @@ MAX_BATCH_SIZE = 1000
 # max_len 是前端可调的截断旋钮，允许试到比默认更长，但必须有天花板，
 # 否则一条 max_len=10**9 的请求会让词索引矩阵直接吃掉全部内存。
 MAX_LEN_LIMIT = 1000
+
+# 框架自己抛的 HTTP 错误的中文说明。只给「前端真会撞上」的两个写专门措辞，
+# 其余状态码走下面的通用句式——保住码值比编一句像样的话更重要。
+_HTTP_ERROR_MESSAGES = {
+    404: "接口不存在",
+    405: "请求方法不允许",
+}
 
 # 错误响应的统一形状：(JSON 体, HTTP 状态码)。
 ErrorResponse = tuple[Response, int]
@@ -163,5 +171,44 @@ def create_app() -> Flask:
         except Exception as exc:  # noqa: BLE001
             return _error(f"推理失败：{type(exc).__name__}", 500)
         return jsonify(result)
+
+    # ------------------------------------------------------------ 错误信封
+    # 上面各路由只覆盖「走到视图函数之后」的失败。框架自己产生的响应
+    # （未知路径、方法不对、请求体过大……）默认是 text/html，
+    # 而前端的 request() 统一 await res.json()——一个 HTML 体就会让那里抛
+    # 解析错误，界面上出现 "Unexpected token '<'"，真正的错误信息被整个盖掉。
+    # 「错误响应统一为 JSON」只有在**所有**响应都是 JSON 时才成立，
+    # 所以必须在应用层再兜一道。
+
+    @app.errorhandler(HTTPException)
+    def _http_error(err: HTTPException) -> ErrorResponse:
+        """框架级 HTTP 错误 → 原状态码 + JSON。
+
+        按**类**注册（而不是逐个 @errorhandler(404)/@errorhandler(405)）：
+        Werkzeug 的 HTTPException 是一个大类，逐个注册只能覆盖列举到的码，
+        其余（413 请求体过大、415 媒体类型不支持……）会掉进下面的兜底处理器，
+        被贴上 500「推理失败」的标签——把客户端错误谎报成服务端错误。
+        实测：按状态码注册 404/405 时，413 得到
+        `500 {"error": "推理失败：RequestEntityTooLarge"}`；按类注册后得到
+        `413 {"error": "请求被拒绝（HTTP 413）"}`。
+
+        类注册同时也是安全的：Flask 沿异常的 MRO 就近查找处理器，
+        HTTPException 比 Exception 更近，故框架错误不会落进兜底。
+        """
+        message = _HTTP_ERROR_MESSAGES.get(err.code, f"请求被拒绝（HTTP {err.code}）")
+        # err.code 理论上可为 None（Werkzeug 对无码异常按 500 处理），
+        # 显式兜一下，免得把一个 None 塞进 HTTP 状态码。
+        return _error(message, err.code or 500)
+
+    @app.errorhandler(Exception)
+    def _unhandled(err: Exception) -> ErrorResponse:
+        """兜底：任何未预期异常都变成 JSON 500。
+
+        口径与三处路由内的 500 完全一致——只回异常**类型名**，
+        既不回 str(err) 也不回栈，避免把内部细节交给前端。
+        副作用（有意为之）：meta.json 损坏这类「不经过推理」的故障
+        也会得到 JSON 而不是 HTML，前端的单一错误路径得以成立。
+        """
+        return _error(f"推理失败：{type(err).__name__}", 500)
 
     return app

@@ -2,6 +2,7 @@
 """接口层测试。用 Flask test client，无需起服务。"""
 
 import pytest
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from senti import api, config, infer
 
@@ -186,6 +187,66 @@ def test_inference_failure_returns_500_json(client, best_model_id, monkeypatch):
     r = client.post("/api/predict", json={"text": "很好", "model_id": best_model_id})
     assert r.status_code == 500
     assert r.get_json() == {"error": "推理失败：RuntimeError"}
+
+
+def test_unknown_path_returns_404_json(client):
+    """未知路径必须是 404 + JSON，而不是 Flask 默认的 HTML 404 页。
+
+    前端的 request() 统一 await res.json()；一个 HTML 体在那里会抛解析错误，
+    界面上只剩 "Unexpected token '<'"，真正的原因（路径写错了）被整个盖掉。
+    「错误响应统一为 JSON」只有在**所有**响应都是 JSON 时才成立。
+    """
+    r = client.get("/api/nope")
+    assert r.status_code == 404
+    assert r.content_type.startswith("application/json"), f"实测 {r.content_type}"
+    assert "error" in r.get_json()
+
+
+def test_wrong_method_returns_405_json(client):
+    """方法不对（POST 路由被 GET）必须是 405 + JSON，而不是 HTML 405 页。
+
+    这条与上一条是两件事：404 是「路径不存在」，405 是「路径存在但方法不对」，
+    前端 typo 掉一个方法时，它得能区分这两种情况。
+    """
+    r = client.get("/api/predict")
+    assert r.status_code == 405
+    assert r.content_type.startswith("application/json"), f"实测 {r.content_type}"
+    assert "error" in r.get_json()
+
+
+def test_unhandled_error_outside_inference_returns_500_json(client, monkeypatch):
+    """不经过推理层的故障（如 meta.json 损坏）也必须回 JSON。
+
+    /api/models 没有自己的 try/except，异常会一路冒到应用层。
+    这正是「兜底处理器」存在的意义：否则前端的单一错误路径只能覆盖一半接口。
+    """
+
+    def boom():
+        raise RuntimeError("模拟 meta.json 损坏")
+
+    monkeypatch.setattr(infer, "list_models", boom)
+    r = client.get("/api/models")
+    assert r.status_code == 500
+    assert r.content_type.startswith("application/json"), f"实测 {r.content_type}"
+    assert r.get_json() == {"error": "推理失败：RuntimeError"}
+
+
+def test_framework_http_error_keeps_its_status_code(client, monkeypatch):
+    """框架级的客户端错误必须保留自己的状态码，不能被兜底处理器压成 500。
+
+    413/415 这类错误是「请求有问题」，报 500「推理失败」等于把客户端错误
+    谎报成服务端错误：前端会以为该重试/报警，而用户改一下请求就好了。
+    为此 HTTPException 按**类**注册（见 api.py 的注释），本用例把这条钉死。
+    """
+
+    def boom():
+        raise RequestEntityTooLarge()
+
+    monkeypatch.setattr(infer, "list_models", boom)
+    r = client.get("/api/models")
+    assert r.status_code == 413, f"实测被压成了 {r.status_code}：{r.get_json()}"
+    assert r.content_type.startswith("application/json"), f"实测 {r.content_type}"
+    assert "error" in r.get_json()
 
 
 def test_max_len_param_is_honored(client, best_model_id):
