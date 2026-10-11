@@ -2921,7 +2921,10 @@ git commit -m "feat(frontend): 概率条与单条分析面板"
 
 **Interfaces:**
 - Consumes: `types.Contrib`
-- Produces: `<TokenHighlight contributions />`（完整实现）
+- Produces: `<TokenHighlight tokens contributions />`（完整实现）
+- ⚠️ **两个输入缺一不可**：`tokens` 是完整渲染骨架，`contributions` 只覆盖前
+  `CONTRIB_MAX_TOKENS`（100）个位置。只按 `contributions` 渲染会把长句截断到前 100 词，
+  并把「未分析」静默渲染成「中性色 = 测得零贡献」——那是在销毁信息。
 
 - [ ] **Step 1: 实现完整版**
 
@@ -2930,6 +2933,9 @@ git commit -m "feat(frontend): 概率条与单条分析面板"
 import type { Contrib } from "../types";
 
 interface Props {
+  /** 完整分词结果（与 /api/predict 的 tokens 相同）——**渲染骨架**。 */
+  tokens: string[];
+  /** 逐词贡献，按原句词序，只覆盖前 CONTRIB_MAX_TOKENS 个位置——**delta 查表**。 */
   contributions: Contrib[];
 }
 
@@ -2954,28 +2960,57 @@ function background(c: Contrib, intensity: number): string {
     : `color-mix(in oklch, var(--contrib-neg) ${alpha * 100}%, transparent)`;
 }
 
-export function TokenHighlight({ contributions }: Props) {
+export function TokenHighlight({ tokens, contributions }: Props) {
   const intensity = normalize(contributions);
-  const top = contributions.slice(0, 10);
+  // 按 |delta| 取前 10 —— 排序是**呈现**所需，服务端已改为保序返回，故在这里排。
+  const top = [...contributions]
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 10);
+
+  // contributions 是 tokens 的前缀（服务端保序），故按下标一一对应。
+  // 超出 contributions 长度的尾部是「**未分析**」——不是「测得贡献为零」。
+  const covered = contributions.length;
 
   return (
     <div className="flex flex-col gap-3">
       <div>
         <h3 className="mb-2 text-sm font-medium text-slate-700">逐词贡献（遮挡法）</h3>
         <p className="flex flex-wrap gap-1 text-base leading-relaxed">
-          {contributions.map((c, i) => (
-            <span
-              key={`${c.token}-${i}`}
-              style={{ backgroundColor: background(c, intensity.get(c.token) ?? 0) }}
-              className="rounded px-1 py-0.5"
-              title={`删去该词后积极概率变化 ${c.delta >= 0 ? "+" : ""}${c.delta.toFixed(4)}`}
-            >
-              {c.token}
-            </span>
-          ))}
+          {tokens.map((token, i) => {
+            const c = i < covered ? contributions[i] : undefined;
+            if (!c) {
+              // 未分析段：必须与「测过且确实无影响」视觉可分，否则用户无法区分
+              // 「没测」和「测了是零」——那等于销毁信息。
+              return (
+                <span
+                  key={`${token}-${i}`}
+                  className="rounded border border-dashed border-slate-300 px-1 py-0.5 text-slate-400"
+                  title="未分析：逐词贡献只覆盖前若干词"
+                >
+                  {token}
+                </span>
+              );
+            }
+            return (
+              <span
+                key={`${token}-${i}`}
+                style={{ backgroundColor: background(c, intensity.get(c.token) ?? 0) }}
+                className="rounded px-1 py-0.5"
+                title={`删去该词后积极概率变化 ${c.delta >= 0 ? "+" : ""}${c.delta.toFixed(4)}`}
+              >
+                {token}
+              </span>
+            );
+          })}
         </p>
         <p className="mt-2 text-xs text-slate-400">
           绿色 = 推高积极判定；红色 = 推高消极判定；颜色越深影响越大。悬停可看具体数值。
+          {covered < tokens.length && (
+            <>
+              {" "}
+              虚线框的词**未分析**（逐词贡献只覆盖前 {covered} 词），与「测得无影响」不是一回事。
+            </>
+          )}
         </p>
       </div>
 
