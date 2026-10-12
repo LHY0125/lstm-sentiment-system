@@ -7,6 +7,12 @@ export interface ModelInfo {
   embedding_dim: number;
   test_acc: number;
   val_acc: number;
+  /** 平衡准确率：两类召回率的均值。类别偏斜时，准确率会被多数类刷高，
+   *  这一个不受类别比例影响——合并语料下它是唯一可比的精度口径。 */
+  test_balanced_acc: number;
+  /** 测试集里多数类的占比，即「无脑判多数类」能拿到的准确率。
+   *  准确率必须与它一起看：92% 对 74% 的基线和 92% 对 50% 的基线是两回事。 */
+  majority_baseline: number;
   params: number;
   train_time_sec: number;
 }

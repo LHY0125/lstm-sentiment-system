@@ -6,14 +6,20 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-/** 模型下拉。把 meta.json 里的指标直接摊在选项上——选模型时看得见代价。
+/** 模型下拉。把 meta.json 里的指标摊开——选模型时看得见代价。
  *
- *  **排序与默认选中来自 val_acc，这里展示的却是 test_acc**，两者不一致是有意的：
- *  `useModels` 按验证准确率降序返回，本组件把测试准确率显示给人看。本项目的规则是
- *  「用验证集做选择、用测试集做报告」——若按测试准确率排序，默认选中的就是 6 个
- *  test_acc 里的极大值，那个数字已被选择过程本身挑过一遍，是乐观偏置。
- *  两个数字都摊开，人才能自己判断差距（6 个模型的 test_acc 只差约 1.3 个百分点，
- *  不把数字摆出来就无从比较）。
+ *  **排序与默认选中来自 val_acc，展示的却是「平衡准确率」**，不一致是有意的：
+ *  `useModels` 按验证准确率降序返回（规则是「用验证集做选择、用测试集做报告」），
+ *  而展示用平衡准确率而**不是**普通的测试准确率——合并语料下测试集 74.3% 是积极，
+ *  一个「无脑判积极」的模型白拿 74.3% 准确率，那个数字单独看会把人骗过去。
+ *  平衡准确率（两类召回率的均值）不受类别比例影响，是偏斜数据上可比的量。
+ *
+ *  详情里把**三个数并排**给出：准确率、平衡准确率、多数类基线。
+ *  三个一起看才能回答真正该问的问题——「这个模型比什么都不做强多少」。
+ *
+ *  展示哪一个都不能驱动排序：`val_acc` 决定顺序，因为它是唯一没被测试集
+ *  挑过一遍的量（按 test_acc 排序会让默认项变成六个测试分数的极大值，
+ *  那个值带选择性偏差）。
  *
  *  `train_time_sec` 是**本机墙钟测量值**，不是模型的固有属性：换机器、换批次大小
  *  都会变。故标注为「本机训练耗时」，避免被当成可复现的模型指标引用。
@@ -35,7 +41,8 @@ export function ModelSelector({ models, selectedId, onSelect }: Props) {
       >
         {models.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.layers} 层 · 隐藏 {m.hidden_dim} · 准确率 {(m.test_acc * 100).toFixed(2)}%
+            {m.layers} 层 · 隐藏 {m.hidden_dim} · 平衡准确率{" "}
+            {(m.test_balanced_acc * 100).toFixed(2)}%
           </option>
         ))}
       </select>
@@ -47,8 +54,22 @@ export function ModelSelector({ models, selectedId, onSelect }: Props) {
             <dd className="font-mono text-slate-900">{(selected.test_acc * 100).toFixed(2)}%</dd>
           </div>
           <div>
+            <dt className="text-slate-500">平衡准确率</dt>
+            <dd className="font-mono text-slate-900">
+              {(selected.test_balanced_acc * 100).toFixed(2)}%
+            </dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">多数类基线</dt>
+            {/* 测试集里多数类的占比：准确率的「无脑参照线」。没有它就不知道
+                92% 到底是好还是仅仅「数据集偏斜」 */}
+            <dd className="font-mono text-slate-900">
+              {(selected.majority_baseline * 100).toFixed(2)}%
+            </dd>
+          </div>
+          <div>
             <dt className="text-slate-500">参数量</dt>
-            {/* params 是 2.5M–3.4M 的裸整数，分组显示；不分组就是一长串数字，读不出量级 */}
+            {/* params 是 2.6M–3.5M 的裸整数，分组显示；不分组就是一长串数字，读不出量级 */}
             <dd className="font-mono text-slate-900">{selected.params.toLocaleString()}</dd>
           </div>
           <div>

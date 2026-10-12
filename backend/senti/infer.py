@@ -28,8 +28,13 @@ def list_models() -> list[dict]:
     否则「六选一」的最优值会带上选择性偏差（winner's curse）。
     test_acc 照常随行返回，供报告与前端展示，只是不驱动排序。
 
+    一并返回 **test_balanced_acc（平衡准确率）与 majority_baseline（多数类占比）**：
+    合并语料下测试集 74.3% 是积极，一个「无脑判积极」的模型白拿 74.3% 准确率——
+    准确率单独看会把人骗过去，必须与这两个数一起读。
+
     字段一律用直接取键而非 .get(...)：meta.json 缺字段属于产物损坏，
     应当立刻炸掉；用默认值兜底会让「所有模型并列 0 分」这种错看起来很正常。
+    注意这也意味着**旧版本训练出的 meta.json 会在这里报错**——重训一次即可。
     """
     if not config.META_PATH.exists():
         return []
@@ -42,6 +47,8 @@ def list_models() -> list[dict]:
             "embedding_dim": m["embedding_dim"],
             "val_acc": m["val_acc"],
             "test_acc": m["test_acc"],
+            "test_balanced_acc": m["test_balanced_acc"],
+            "majority_baseline": m["majority_baseline"],
             "params": m["params"],
             "train_time_sec": m["train_time_sec"],
         }

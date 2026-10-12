@@ -49,7 +49,28 @@ def test_list_models_reads_meta():
     models = infer.list_models()
     assert models, "meta.json 里应当至少有一个模型"
     for m in models:
-        assert {"id", "layers", "hidden_dim", "val_acc", "test_acc", "params"} <= set(m)
+        assert {
+            "id", "layers", "hidden_dim", "val_acc", "test_acc",
+            "test_balanced_acc", "majority_baseline", "params",
+        } <= set(m)
+
+
+def test_skew_aware_metrics_are_exposed_and_sane():
+    """准确率必须与**平衡准确率**和**多数类基线**一起给出去。
+
+    只给准确率，读的人无法判断 92% 到底是"模型好"还是"数据集本来就偏斜"——
+    合并语料下测试集 74.3% 是积极，一个无脑判积极的模型白拿 74.3%。
+    这三个数缺一个，前端的展示就成了误导而不是信息。
+
+    范围断言刻意不绑定具体 profile：切换到单语料（平衡）profile 时，
+    多数类基线会回到 ~0.5，这里的两条范围断言仍然成立。
+    """
+    models = infer.list_models()
+    assert models, "meta.json 里应当至少有一个模型"
+    for m in models:
+        assert 0.0 <= m["test_balanced_acc"] <= 1.0, m
+        assert 0.0 < m["majority_baseline"] < 1.0, m
+        assert 0.0 <= m["test_acc"] <= 1.0, m
 
 
 def test_list_models_sorted_by_val_acc():
