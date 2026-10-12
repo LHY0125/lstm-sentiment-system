@@ -165,10 +165,24 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 htt
 docker build -t senti-lstm .
 
 # 运行：把训练产物挂进去（只读即可）
-docker run -d --name senti -p 8050:5000 -v "<仓库路径>\backend\artifacts:/app/backend/artifacts:ro" senti-lstm
+docker run -d --name senti -p 8300:5000 -v "<仓库路径>\backend\artifacts:/app/backend/artifacts:ro" senti-lstm
 ```
 
-打开 `http://127.0.0.1:8050/`。
+打开 `http://127.0.0.1:8300/`。
+
+也可以直接用编排文件，两份分工不同：
+
+| 文件 | 用途 |
+|------|------|
+| `docker-compose.yml` | 本地 / 通用：带 `build:`、挂载用相对路径、**只绑回环** |
+| `docker-compose.server.yml` | 腾讯云 1Panel：去掉 `build:`（服务器上只 load 镜像）、挂载写**绝对路径**（1Panel 会把编排文件收进自己的目录树，相对路径会跟着跑）、端口对外暴露 |
+
+```powershell
+docker compose up -d --build      # 走 docker-compose.yml
+```
+
+`docker-compose.server.yml` 的头部注释里写了上服务器前要准备的两样东西
+（`docker save` 过去的镜像、`/opt/senti-lstm/artifacts/` 里的训练产物）。
 
 
 | 项         | 值                                                                                                                       |

@@ -1,0 +1,58 @@
+# 基于 LSTM 的网络评论情感分类系统 —— 本地 / 通用编排
+#
+# 单容器：Flask 同时提供 API 与前端 SPA（dist 由镜像的多阶段构建产出）。
+# 完整说明见 README 的「Docker 镜像」一节，这里只放需要判断的取值。
+#
+# 怎么起：
+#   docker compose up -d --build
+#
+# ⚠️ 模型产物**不打进镜像**，由卷挂载。它们不入库，所以第一次起之前宿主上
+#    必须已经有一份 backend/artifacts/（6 个 .pt + vocab.json + meta.json）——
+#    要么在本机跑过一次训练，要么从别处拷来。
+#    没挂到的表现是 /api/models 返回 []：容器能起、健康检查也过，只是没模型。
+
+services:
+  senti-lstm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: senti-lstm:1.0.0
+    container_name: senti-lstm
+
+    # 与目标机上其它容器保持一致
+    restart: unless-stopped
+
+    ports:
+      # 宿主 8300 → 容器 5000。容器内固定 5000（镜像里 HOST/PORT 的默认值），
+      # 宿主侧选 8300 是为了避开常见的 5000 占用（本机与腾讯云上测过）。
+      # **只绑回环**：少开一个公网入口。⚠️ 本服务**没有任何鉴权** ——
+      # 要对外访问就再经反向代理（并在那一层做访问控制），不要直接开 0.0.0.0。
+      - "127.0.0.1:8300:5000"
+
+    volumes:
+      # 训练产物。**只读**：推理期一个字都不写。
+      - ./backend/artifacts:/app/backend/artifacts:ro
+
+    environment:
+      - TZ=Asia/Shanghai
+      # HOST / PORT 不在这里写：镜像里已默认 HOST=0.0.0.0、PORT=5000。
+      # 两处各写一份就是两个真相，日后必然漂移。
+
+    security_opt:
+      - no-new-privileges:true
+
+    # 实测（本机、同镜像）：空跑 180.8 MiB；六个模型全部加载并跑完一次
+    # explain 之后 373.6 MiB。768m ≈ 2× 余量，留给并发的 explain
+    #（一次 explain = 100 次遮挡前向 + 1 次基线）。
+    mem_limit: 768m
+
+    logging:
+      # Flask 每个请求打一行日志，演示时 explain 调用密集。不封顶会一直长。
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # 健康检查**不在这里重复**：镜像里已经有 HEALTHCHECK（打 /api/health，
+    # 见 Dockerfile）。两处各写一份就是两个真相，日后必然漂移。
+    # 看当前状态：docker inspect -f '{{.State.Health.Status}}' senti-lstm

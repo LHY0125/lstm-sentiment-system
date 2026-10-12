@@ -1,0 +1,76 @@
+# 基于 LSTM 的网络评论情感分类系统 —— 腾讯云生产编排（1Panel 用）
+#
+# 与仓库里的 docker-compose.yml 有三处不同，前两处是因为 1Panel 会把编排文件
+# 存到它自己的目录树（/opt/1panel/docker/compose/<名字>/）：
+#   · 挂载写成**绝对路径**（相对路径会跟着编排文件跑到 1Panel 目录下）
+#   · 去掉 build:（服务器上没有构建上下文，镜像已经 load 好了）
+# 第三处与同机的 english-learning-agent 那份 server 编排一致：
+#   · 端口对外暴露（0.0.0.0），用于直接 IP:端口 访问，不经反代
+#
+# 怎么起：
+#   docker compose up -d
+# 或者交给 1Panel「容器 → 编排 → 创建编排」。
+#
+# ⚠️ 上服务器之前，宿主上要先备好两样东西（镜像里都没有）：
+#   1) 镜像本体：
+#        docker save senti-lstm:1.0.0 | gzip > senti-lstm.tar.gz     # 本地
+#        scp senti-lstm.tar.gz tencent:/tmp/ && gunzip -c … | docker load   # 服务器
+#   2) 训练产物 → /opt/senti-lstm/artifacts/
+#        sudo install -d -o 10001 -g 10001 /opt/senti-lstm/artifacts
+#        # 再把 6 个 .pt + vocab.json + meta.json 拷进去
+
+services:
+  senti-lstm:
+    image: senti-lstm:1.0.0
+    container_name: senti-lstm
+
+    # 与目标机上其它容器保持一致
+    restart: unless-stopped
+
+    ports:
+      # 宿主 8300 → 容器 5000（容器内固定 5000，镜像里 HOST/PORT 的默认值）。
+      # 8300 是**实测空闲**的：这台机器上已监听 22 25 53 80 222 443 3000 5432
+      # 7400 7700 8000 8090 8091。
+      # ⚠️ **对外暴露**（0.0.0.0）是刻意覆盖回环绑定的：用途是直接用
+      #    http://<公网IP>:8300 访问，不经反代。代价必须说清 ——
+      #    **本服务没有任何鉴权**：任何能访问该端口的人都能提交文本让服务器
+      #    跑推理（explain 一次是 101 次前向，CPU 密集）。它不持有数据、没有
+      #    写接口，所以风险是**算力被白嫖**而不是数据泄露；但同机还跑着
+      #    Halo / Gitea / PostgreSQL，算力被吃满会波及它们（mem_limit 只兜
+      #    内存，不兜 CPU）。想收回公网入口，把这一行换成：
+      #        - "127.0.0.1:8300:5000"
+      #    再在 openresty 上加一个 vhost 反代过去，并在那一层做访问控制。
+      # 另需在腾讯云安全组放行 8300/TCP（容器绑定只是必要条件，不是充分条件）。
+      - "0.0.0.0:8300:5000"
+
+    volumes:
+      # 训练产物。**只读**：推理期一个字都不写。
+      # ⚠️ 容器以 uid 10001 运行（Dockerfile 的 USER），宿主目录必须对它可读，
+      #    否则表现为 /api/models 返回 [] —— 容器能起、健康检查也过，只是没模型。
+      #    只读挂载下 r-x 就够，不需要写权限。
+      - /opt/senti-lstm/artifacts:/app/backend/artifacts:ro
+
+    environment:
+      - TZ=Asia/Shanghai
+      # HOST / PORT 不在这里写：镜像里已默认 HOST=0.0.0.0、PORT=5000。
+      # 两处各写一份就是两个真相，日后必然漂移。
+
+    security_opt:
+      - no-new-privileges:true
+
+    # 实测（同镜像）：空跑 180.8 MiB；六个模型全部加载并跑完一次 explain 后
+    # 373.6 MiB。**不设 1g**：这台机器 3.3 GiB 内存里只有约 1.2 GiB 可用，
+    # 1g 上限会把余量压到不足以应对突发，而同机还有 Halo / Gitea / PostgreSQL。
+    mem_limit: 768m
+
+    logging:
+      # Flask 每个请求打一行日志，演示时 explain 调用密集。宿主 40 GB 盘已用
+      # 64%（剩 14 GB），不封顶会一直长。
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # 健康检查**不在这里重复**：镜像里已经有 HEALTHCHECK（打 /api/health，
+    # 见 Dockerfile）。两处各写一份就是两个真相，日后必然漂移。
+    # 看当前状态：docker inspect -f '{{.State.Health.Status}}' senti-lstm
