@@ -78,14 +78,14 @@ git init
 ```powershell
 uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
 uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
-uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
+uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors matplotlib pytest requests pyarrow
 ```
 
 - [ ] **Step 3: 验证环境**
 
 Run:
 ```powershell
-.venv\Scripts\python.exe -c "import torch, jieba, flask, pandas, matplotlib, sklearn, pytest, requests; print(torch.__version__, torch.cuda.is_available())"
+.venv\Scripts\python.exe -c "import torch, jieba, flask, matplotlib, pytest, requests; print(torch.__version__, torch.cuda.is_available())"
 ```
 Expected: `2.12.0+cu132 True`
 
@@ -3565,13 +3565,12 @@ ChnSentiCorp（中文情感分析语料，含酒店、电脑/电子、图书三�
 ### 重新搭建环境
 
 ```powershell
-uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
-uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
-uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
+uv venv .venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r backend\requirements.txt
 cd frontend; pnpm install
 ```
 
-> `pyarrow` 由 Task 2 引入（读取原生划分的 parquet 语料），**已并入上面这条安装命令**。
+> 依赖清单见 `backend/requirements.txt`（含 CUDA 版 torch 的安装说明）。
 
 ## 运行
 

@@ -61,7 +61,7 @@
 | 深度学习框架 | PyTorch 2.12.0+cu132 | 与课程实验一致；本机已有本地 wheel |
 | 中文分词 | jieba 0.42.1 | 中文分词事实标准；全局 `uv_env` 已有，本项目 `.venv` 单独安装 |
 | 后端框架 | Flask + flask-cors | 轻量；仅需 REST 接口，不需 FastAPI 的异步与自动文档 |
-| 数据读写 | pandas | 语料为 CSV/TSV；统计与导出方便 |
+| 数据读写 | 标准库 csv + pyarrow | 语料为 CSV/TSV/parquet；csv 流式读、pyarrow 读原生划分，不引重依赖 |
 | 绘图 | matplotlib | 沿课程实验惯例（含 `common/plot_font.py` 中文字体配置） |
 | 前端 | React 19 + Vite + TypeScript + Tailwind CSS v4 | 与用户既有项目技术栈一致；`pnpm create vite --template react-ts` 当前产出 React 19 |
 | 前端工具链 | pnpm + Biome | 同上 |
@@ -425,7 +425,7 @@ matplotlib
 pytest
 ```
 
-**不安装 torchvision。** 本项目的数据是 CSV（pandas 读取）与 jieba 分词，
+**不安装 torchvision。** 本项目的数据是 CSV（标准库 csv 读取）与 jieba 分词，
 模型只用 `nn.Embedding / nn.LSTM / nn.Linear`，不涉及任何图像变换或
 `torchvision.datasets`，因此 torchvision 无用途。
 
