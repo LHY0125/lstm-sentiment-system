@@ -10,3 +10,9 @@ frontend/dist/
 .vite/
 *.log
 backend/artifacts_baseline/
+
+# 课程材料：老师提供的任务书与报告模板，不是本项目作品，不随开源发布。
+# 仅从仓库移除，磁盘上保留（交作业还要用）。
+docs/《神经网络与深度学习》课程设计.md
+docs/《神经网络与深度学习》课程设计.pdf
+docs/课程设计报告模板 - 神经网络与深度学习.doc

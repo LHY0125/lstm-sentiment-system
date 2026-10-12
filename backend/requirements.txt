@@ -1,0 +1,37 @@
+# 后端依赖清单（Python 3.13）
+#
+# 版本号取自项目实测环境（pip/importlib.metadata 实测，非估计）。
+# 安装：
+#     uv venv .venv --python 3.13
+#     uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+#
+# ⚠️ 关于 PyTorch 的 CUDA 版本
+# ------------------------------------------------------------------
+# 这里只写 torch==2.12.0（PyPI 上的默认构建）。若要与本项目实测一致（CUDA 12.3
+# 构建 cu132），需要从 PyTorch 官方索引安装：
+#     uv pip install torch==2.12.0 --index-url https://download.pytorch.org/whl/cu132
+# 没有 NVIDIA GPU 时直接装默认版即可，代码会自动退回 CPU 运行
+# （见 senti/train.py 的 device()）。
+#
+# **本项目不装 torchvision / torchaudio**：没有图像与音频任务，
+# 装了反而会引入与 torch 的版本配对问题。
+
+torch==2.12.0
+
+# 中文分词与数据处理
+jieba==0.42.1
+numpy==2.5.4
+pandas==3.0.6
+pyarrow==26.0.0          # 读取原生划分的 parquet 语料
+
+# 接口层
+flask==3.1.3
+flask-cors==6.0.5
+requests==2.34.2         # 语料下载
+
+# 训练曲线（报告素材）与网格实验
+matplotlib==3.11.2
+scikit-learn==1.9.1
+
+# 测试
+pytest==9.1.1

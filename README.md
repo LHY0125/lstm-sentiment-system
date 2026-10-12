@@ -1,10 +1,12 @@
 # 基于 LSTM 的网络评论情感分类系统
 
-河南理工大学计算机学院《神经网络与深度学习》课程设计 · 选题(3)
-指导教师：侯蓓蓓
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 基于 LSTM 的中文评论情感二分类系统：PyTorch 训练模型，Flask 提供推理与
 可解释性接口，React 前端提供单条分析、批量分析与参数调节。
+
+> 本项目源自河南理工大学计算机学院《神经网络与深度学习》课程设计（选题 3）。
+> 课程材料（任务书、报告模板）不在本仓库内。
 
 ## 系统组成
 
@@ -208,3 +210,19 @@ cd ..\frontend; pnpm typecheck; pnpm lint; pnpm build
 
 - 设计：`docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`
 - 计划：`docs/superpowers/plans/2026-10-11-lstm-sentiment-system.md`
+
+## 参与
+
+- **贡献**：请先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)（环境、测试、代码约定、提交格式）。
+- **安全问题**：请看 [`SECURITY.md`](SECURITY.md)，**请不要开公开 Issue**。
+- **行为准则**：[贡献者公约 2.1](CODE_OF_CONDUCT.md)。
+- **变更记录**：[`CHANGELOG.md`](CHANGELOG.md)。
+- **给 AI 助手的说明**：[`CLAUDE.md`](CLAUDE.md)（项目约定与改动禁区）。
+
+## 许可证
+
+[GNU General Public License v3.0](LICENSE)。
+
+简言之：你可以自由使用、修改、分发本项目，但**衍生作品也必须以同样的许可证开源**。
+若你只想在自己的项目里用其中一部分而不想受此约束，请先联系作者。
+

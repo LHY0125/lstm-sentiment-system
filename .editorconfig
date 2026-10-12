@@ -1,0 +1,23 @@
+# 编辑器统一配置。参见 .gitattributes —— 行尾一律 LF，避免跨平台差异被当成改动。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+
+[*.md]
+# Markdown 里行尾两个空格是有意义的换行，不能自动删
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd}]
+end_of_line = crlf
