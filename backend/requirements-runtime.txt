@@ -1,0 +1,29 @@
+# Docker 镜像的**运行时**依赖——只装推理与接口真正需要的东西。
+#
+# 与 backend/requirements.txt 的分工：
+#   那份 = 开发 / 训练环境（含 matplotlib 画曲线、pytest 跑测试）
+#   这份 = 容器运行时，装进去的每个包都被 import 到
+#
+#   torch     推理
+#   numpy     infer.py 直接 import
+#   jieba     分词
+#   flask / flask-cors（werkzeug 随 flask 附带）
+#   requests   经 infer → train → corpora 传递引入
+#   pyarrow    同上（corpora 读 parquet 语料）
+#
+# 刻意**不装** matplotlib / pytest / pandas / scikit-learn：运行时零 import，
+# 装进去只会让镜像白白胖几百 MB。
+#
+# ⚠️ torch **必须**走 PyTorch 官方 CPU 索引并钉 `+cpu` 后缀：
+#   Linux 上 PyPI 的 torch 默认是 CUDA 构建，会连带拖进 nvidia-* 一整套依赖（2.5 GB+）。
+#   本地版本号在 PEP 440 里排序高于同名正式版，所以 `==2.12.0+cpu` 能钉死 CPU 构建；
+#   万一索引里没有，pip 会**报错**而不是静默退回 CUDA 版——这正是想要的行为。
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.12.0+cpu
+numpy==2.5.4
+jieba==0.42.1
+flask==3.1.3
+flask-cors==6.0.5
+requests==2.34.2
+pyarrow==26.0.0
