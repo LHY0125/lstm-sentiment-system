@@ -63,6 +63,39 @@ def evaluate(m: nn.Module, loader: DataLoader, dev: torch.device) -> float:
     return correct / max(total, 1)
 
 
+@torch.no_grad()
+def evaluate_full(m: nn.Module, loader: DataLoader, dev: torch.device) -> dict:
+    """一次前向算出准确率、**平衡准确率**与多数类基线。
+
+    为什么不能只看准确率：合并语料里积极占 74.4%，一个「无脑判积极」的模型白拿
+    74.3% 准确率。**平衡准确率**（两类召回率的均值）对类别比例不敏感，在偏斜数据上
+    才是能读的数字；`majority_baseline` 就是那个「无脑判多数类」的分数，用来给
+    准确率提供一个可比的参照——报告里写「91%，而多数类基线是 74%」才是有信息的。
+    """
+    m.eval()
+    correct = total = 0
+    class_correct = [0, 0]
+    class_total = [0, 0]
+
+    for xb, lb, yb in loader:
+        x = xb.transpose(1, 0).contiguous().to(dev)
+        pred = m(x, lb.to(dev)).argmax(dim=1).cpu()
+        correct += (pred == yb).sum().item()
+        total += len(yb)
+        for cls in (0, 1):
+            mask = yb == cls
+            class_total[cls] += int(mask.sum().item())
+            class_correct[cls] += int((pred[mask] == cls).sum().item())
+
+    recalls = [class_correct[c] / class_total[c] for c in (0, 1) if class_total[c] > 0]
+    return {
+        "acc": correct / max(total, 1),
+        "balanced_acc": sum(recalls) / len(recalls) if recalls else 0.0,
+        "majority_baseline": max(class_total) / max(total, 1),
+        "class_total": class_total,
+    }
+
+
 def split_train_val(
     ids: np.ndarray, lengths: np.ndarray, labels: np.ndarray,
     val_ratio: float = config.VAL_RATIO, seed: int = config.RANDOM_SEED,
@@ -140,7 +173,7 @@ def train_one(layers: int, hidden: int, prep: dict, quiet: bool = False) -> dict
     optimizer = optim.Adam(m.parameters(), lr=config.LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
 
-    best_val, best_state = -1.0, None
+    best_val, best_state, best_val_balanced = -1.0, None, 0.0
     history = {"loss": [], "val_acc": []}   # 逐轮累积，供 visualize() 绘图
     t0 = time.time()
 
@@ -157,22 +190,24 @@ def train_one(layers: int, hidden: int, prep: dict, quiet: bool = False) -> dict
             loss_sum += loss.item()
 
         epoch_loss = loss_sum / len(tr_loader)
-        val_acc = evaluate(m, val_loader, dev)
+        val = evaluate_full(m, val_loader, dev)
         history["loss"].append(epoch_loss)
-        history["val_acc"].append(val_acc)
+        history["val_acc"].append(val["acc"])
 
-        if val_acc > best_val:
-            best_val = val_acc
+        if val["acc"] > best_val:
+            best_val = val["acc"]
+            best_val_balanced = val["balanced_acc"]
             best_state = {k: v.detach().clone() for k, v in m.state_dict().items()}
 
         if not quiet:
             print(f"  [{mid}] epoch {epoch + 1}/{config.EPOCHS} "
-                  f"loss={epoch_loss:.4f} val_acc={val_acc:.4f}")
+                  f"loss={epoch_loss:.4f} val_acc={val['acc']:.4f} "
+                  f"val_balanced={val['balanced_acc']:.4f}")
 
     # 用验证最优权重报告测试集指标
     assert best_state is not None
     m.load_state_dict(best_state)
-    test_acc = evaluate(m, te_loader, dev)
+    test = evaluate_full(m, te_loader, dev)
     train_time = time.time() - t0
 
     # 训练曲线是报告第 5 章「结果分析」的素材，必须产出，故不随 quiet 关闭
@@ -198,12 +233,20 @@ def train_one(layers: int, hidden: int, prep: dict, quiet: bool = False) -> dict
         "hidden_dim": hidden,
         "embedding_dim": config.EMBEDDING_DIM,
         "val_acc": round(best_val, 4),
-        "test_acc": round(test_acc, 4),
+        "val_balanced_acc": round(best_val_balanced, 4),
+        "test_acc": round(test["acc"], 4),
+        "test_balanced_acc": round(test["balanced_acc"], 4),
+        # 测试集里多数类的占比——准确率的「无脑参照线」。
+        # 偏斜数据上必须与准确率一起看：91% 对 74% 的基线和 91% 对 50% 的基线，
+        # 说的是完全不同的两件事。
+        "majority_baseline": round(test["majority_baseline"], 4),
         "params": model.count_parameters(m),
         "train_time_sec": round(train_time, 1),
         "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
     }
-    print(f"  [{mid}] 验证 {best_val:.4f} / 测试 {test_acc:.4f} / "
+    print(f"  [{mid}] 验证 {best_val:.4f}（平衡 {best_val_balanced:.4f}） / "
+          f"测试 {test['acc']:.4f}（平衡 {test['balanced_acc']:.4f}，"
+          f"多数类基线 {test['majority_baseline']:.4f}） / "
           f"参数 {metrics['params']:,} / 耗时 {train_time:.0f}s")
     return metrics
 
