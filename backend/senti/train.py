@@ -21,7 +21,7 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from senti import config, data, model
+from senti import config, corpora, data, model
 
 
 def set_seed(seed: int = config.RANDOM_SEED) -> None:
@@ -79,27 +79,60 @@ def split_train_val(
     return tr_loader, val_loader
 
 
-def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
+def corpus_label() -> str:
+    """`meta.json` 里 dataset 字段的取值——如实描述本轮到底用了哪套语料。
+
+    这里曾经写死 "ChnSentiCorp"，合并语料之后就成了一句错话：元数据是报告「数据集」
+    章节的取值来源，不能让读者以为 89% 是那 9600 条跑出来的。
+    """
+    if config.CORPUS_PROFILE == "merged":
+        return "ChnSentiCorp ∪ " + " ∪ ".join(corpora.CORPORA) + "（合并后全局重划分）"
+    return "ChnSentiCorp（原生 train/test 划分）"
+
+
+def prepare(save_vocab: bool = True) -> dict:
+    """载入划分 → 建词表 → 编码，**只做一次**，供全部配置复用。
+
+    为什么必须只做一次：合并语料有 184 万条，编码成 (N, 150) 的 int64 矩阵约 2 GB，
+    过一次 jieba 也要几分钟。6 个配置各来一遍既慢又容易把内存吃光——
+    这是数据量涨两个数量级之后才暴露出来的问题。
+    """
+    tr_texts, tr_labels, te_texts, te_labels = corpora.load_training_split()
+    vocab = data.build_vocab(tr_texts)
+    if save_vocab:
+        data.save_vocab(vocab)
+
+    tr_ids, tr_len = data.encode(tr_texts, vocab)
+    te_ids, te_len = data.encode(te_texts, vocab)
+
+    return {
+        "vocab": vocab,
+        "tr_ids": tr_ids,
+        "tr_len": tr_len,
+        "tr_labels": np.array(tr_labels, dtype=np.int64),
+        "te_ids": te_ids,
+        "te_len": te_len,
+        "te_labels": np.array(te_labels, dtype=np.int64),
+        "train_size": len(tr_texts),
+        "test_size": len(te_texts),
+    }
+
+
+def train_one(layers: int, hidden: int, prep: dict, quiet: bool = False) -> dict:
     """训练单个配置，返回指标字典并保存 checkpoint。
 
     每轮在验证集上评估，**保留验证准确率最高的那轮权重**；
     训练结束后用该权重在测试集上评估一次，作为最终指标。
+
+    数据由调用方经 `prepare()` 备好并传入——见那里的说明（只编码一次）。
     """
     set_seed()
     dev = device()
     mid = config.model_id(layers, hidden)
+    vocab = prep["vocab"]
 
-    tr_texts, tr_labels, te_texts, te_labels = data.load_split()
-    vocab = data.load_vocab()
-    tr_ids, tr_len = data.encode(tr_texts, vocab)
-    te_ids, te_len = data.encode(te_texts, vocab)
-
-    tr_loader, val_loader = split_train_val(
-        tr_ids, tr_len, np.array(tr_labels, dtype=np.int64)
-    )
-    te_loader = make_loader(
-        te_ids, te_len, np.array(te_labels, dtype=np.int64), shuffle=False
-    )
+    tr_loader, val_loader = split_train_val(prep["tr_ids"], prep["tr_len"], prep["tr_labels"])
+    te_loader = make_loader(prep["te_ids"], prep["te_len"], prep["te_labels"], shuffle=False)
 
     m = model.SentimentLSTM(
         vocab_size=len(vocab) + config.FIRST_WORD_IDX, hidden_dim=hidden, num_layers=layers
@@ -175,18 +208,24 @@ def train_one(layers: int, hidden: int, quiet: bool = False) -> dict:
     return metrics
 
 
-def overfit_test(n: int = 40, epochs: int = 30) -> float:
+def overfit_test(n: int = 40, epochs: int = 30, load=None) -> float:
     """小样本过拟合测试——验证数据管线正确性的最快手段。
 
     取 n 条样本（不切验证集、不加 dropout），看训练准确率能否冲到接近 100%。
     管线正确时必然能过拟合；若不能，问题在词表/编码/取末词，而不在超参数。
+
+    `load` 是划分来源，缺省用当前 CORPUS_PROFILE 的那套（即真的去查合并语料）。
+    单元测试会传入单语料的划分，免得为了过拟合 40 条样本而翻遍 184 万条。
 
     返回训练集最终准确率。
     """
     set_seed()
     dev = device()
 
-    tr_texts, tr_labels, _, _ = data.load_split()
+    tr_texts, tr_labels, _, _ = (load or corpora.load_training_split)()
+    # 词表从**全量训练集**构建，不能用那 40 条：否则样本里的词几乎全落到 <unk>，
+    # 过拟合测试就测不到「取最后一个真实词」这些真正想验的环节。
+    # 代价是这一步要过一遍全量分词（合并语料下约几分钟），属一次性的诊断开销。
     vocab = data.build_vocab(tr_texts)
     ids, lengths = data.encode(tr_texts[:n], vocab)
     labels = np.array(tr_labels[:n], dtype=np.int64)
@@ -249,14 +288,13 @@ def visualize(history: dict, mid: str) -> Path:
 
 def run_grid() -> dict:
     """遍历 GRID 训练全部配置，写出 meta.json，返回 meta 字典。"""
-    tr_texts, tr_labels, te_texts, te_labels = data.load_split()
-    vocab = data.build_vocab(tr_texts)
-    data.save_vocab(vocab)
+    prep = prepare()
+    vocab = prep["vocab"]
 
     results = []
     for layers, hidden in config.GRID:
         print(f"\n=== 训练 {config.model_id(layers, hidden)} ===")
-        results.append(train_one(layers, hidden))
+        results.append(train_one(layers, hidden, prep))
 
     # 排序与「最优配置」一律按**验证集**：测试集只负责报告，不参与任何选择。
     #
@@ -267,9 +305,9 @@ def run_grid() -> dict:
     ranked = sorted(results, key=lambda r: r["val_acc"], reverse=True)
 
     meta = {
-        "dataset": "ChnSentiCorp",
-        "train_size": len(tr_texts),
-        "test_size": len(te_texts),
+        "dataset": corpus_label(),
+        "train_size": prep["train_size"],
+        "test_size": prep["test_size"],
         "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
         "max_len": config.MAX_LEN,
         "models": ranked,
@@ -287,18 +325,16 @@ def run_grid() -> dict:
     return meta
 
 
-def write_meta_for_single(metrics: dict) -> None:
+def write_meta_for_single(metrics: dict, prep: dict) -> None:
     """单配置训练后，把结果并入 meta.json（已存在同 id 则替换）。"""
     if config.META_PATH.exists():
         meta = json.loads(config.META_PATH.read_text(encoding="utf-8"))
     else:
-        tr_texts, _, te_texts, _ = data.load_split()
-        vocab = data.load_vocab()
         meta = {
-            "dataset": "ChnSentiCorp",
-            "train_size": len(tr_texts),
-            "test_size": len(te_texts),
-            "vocab_size": len(vocab) + config.FIRST_WORD_IDX,
+            "dataset": corpus_label(),
+            "train_size": prep["train_size"],
+            "test_size": prep["test_size"],
+            "vocab_size": len(prep["vocab"]) + config.FIRST_WORD_IDX,
             "max_len": config.MAX_LEN,
             "models": [],
         }
@@ -316,15 +352,6 @@ def write_meta_for_single(metrics: dict) -> None:
     print(f"元数据已更新：{config.META_PATH}")
 
 
-def build_vocab_once() -> None:
-    """确保词表已落盘（单配置训练入口的前置步骤）。"""
-    if config.VOCAB_PATH.exists():
-        print(f"词表已存在：{config.VOCAB_PATH}")
-        return
-    tr_texts, _, _, _ = data.load_split()
-    data.save_vocab(data.build_vocab(tr_texts))
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="LSTM 情感分类模型训练")
     parser.add_argument("--config", nargs=2, type=int, metavar=("LAYERS", "HIDDEN"),
@@ -339,13 +366,13 @@ def main() -> None:
         print("判定：通过" if acc >= 0.9 else "判定：不通过 —— 检查词表/编码/取末词逻辑")
         return
 
-    build_vocab_once()
-
+    # prep 在这里建一次、传下去：见 prepare() 的说明（合并语料下不能每个配置重建）
     if args.config:
         layers, hidden = args.config
         if (layers, hidden) not in config.GRID:
             raise SystemExit(f"配置 {layers}/{hidden} 不在 GRID 中：{config.GRID}")
-        write_meta_for_single(train_one(layers, hidden))
+        prep = prepare()
+        write_meta_for_single(train_one(layers, hidden, prep), prep)
         return
 
     run_grid()

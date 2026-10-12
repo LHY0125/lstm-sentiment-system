@@ -529,6 +529,61 @@ def test_download_one_forgives_earlier_stalls_once_progress_resumes(serve, tmp_p
     assert corpora.STALL_LIMIT <= len(script["failed"])
 
 
+# ---------------------------------------------------------------- 合并划分
+
+def _stub_corpus(monkeypatch):
+    """把主语料与扩充语料都换成内存里的假数据，避免真去读 184 万条。
+
+    文本刻意**唯一**：真实语料里同一句评论会重复出现，所以「两份集合按值取交集」
+    并不能证明划分无重叠——那种断言在重复文本上必然误报。
+    """
+    monkeypatch.setattr(
+        corpora.data, "load_split",
+        lambda: (
+            [f"chn-{i}" for i in range(20)], [1] * 20,
+            [f"chn-{i + 20}" for i in range(20)], [0] * 20,
+        ),
+    )
+    monkeypatch.setattr(
+        corpora, "iter_rows",
+        lambda key: iter([corpora.Row(f"{key}-{i}", i % 2, "") for i in range(10)]),
+    )
+
+
+def test_load_merged_split_is_deterministic_disjoint_and_ratioed(monkeypatch):
+    """合并划分：可复现、训练与测试不重叠、测试集比例取自 config.TEST_RATIO。"""
+    _stub_corpus(monkeypatch)
+    total = 40 + len(corpora.CORPORA) * 10
+
+    train_texts, train_labels, test_texts, test_labels = corpora.load_merged_split()
+
+    assert len(train_texts) + len(test_texts) == total
+    assert len(test_texts) == max(1, int(total * corpora.config.TEST_RATIO))
+    assert len(train_labels) == len(train_texts) and len(test_labels) == len(test_texts)
+    assert not (set(train_texts) & set(test_texts)), "训练集与测试集出现了重叠（假数据文本唯一，可直接按值判）"
+
+    again = corpora.load_merged_split()
+    assert again[0] == train_texts and again[2] == test_texts, "同一份数据两次划分结果不一致"
+
+
+def test_load_merged_split_includes_every_corpus(monkeypatch):
+    _stub_corpus(monkeypatch)
+    train_texts, _, test_texts, _ = corpora.load_merged_split()
+    everything = train_texts + test_texts
+    for key in corpora.CORPORA:
+        assert any(t.startswith(f"{key}-") for t in everything), f"{key} 没有进合并集"
+
+
+def test_load_training_split_follows_the_profile(monkeypatch):
+    monkeypatch.setattr(corpora.config, "CORPUS_PROFILE", "merged")
+    monkeypatch.setattr(corpora, "load_merged_split", lambda: ("来自合并",))
+    assert corpora.load_training_split() == ("来自合并",)
+
+    monkeypatch.setattr(corpora.config, "CORPUS_PROFILE", "chnsenticorp")
+    monkeypatch.setattr(corpora.data, "load_split", lambda: ("来自单语料",))
+    assert corpora.load_training_split() == ("来自单语料",)
+
+
 # ---------------------------------------------------------------- 端到端（本地目录）
 
 def test_load_rows_against_a_local_corpus_dir(tmp_path, monkeypatch):

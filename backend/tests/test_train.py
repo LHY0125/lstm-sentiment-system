@@ -9,7 +9,7 @@
 import numpy as np
 import torch
 
-from senti import config, train
+from senti import config, data, train
 
 
 def test_set_seed_makes_initialization_reproducible():
@@ -49,6 +49,9 @@ def test_overfit_test_can_reach_high_accuracy():
 
     若几十条样本都无法过拟合，说明词表、编码或「取真实末词」的逻辑有 bug。
     这是把「模型不学习」与「数据有错」两个症状分开的最快手段。
+
+    这里**显式传入单语料的划分**：过拟合测试验的是「词表 → 编码 → 取末词」这条链路，
+    与用哪套语料无关；而默认的合并语料有 184 万条，为一个 40 条的诊断翻一遍是分钟级的。
     """
-    acc = train.overfit_test(n=40, epochs=30)
+    acc = train.overfit_test(n=40, epochs=30, load=data.load_split)
     assert acc >= 0.9, f"小样本过拟合仅 {acc:.2%}，管线可能有问题"

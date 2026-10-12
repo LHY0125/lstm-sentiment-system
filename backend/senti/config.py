@@ -20,6 +20,12 @@ VOCAB_PATH = ARTIFACT_DIR / "vocab.json"
 META_PATH = ARTIFACT_DIR / "meta.json"
 
 # ---------------------------------------------------------------- 数据
+# 训练用哪套语料：
+#   "merged"       —— 主训练语料（ChnSentiCorp）与全部扩充语料（外卖/微博/电商/影评）
+#                     合并后**全局重划分**，见 senti/corpora.py 的 load_merged_split
+#   "chnsenticorp" —— 只用主训练语料，沿用其原生 9600/1200 划分（旧基线，可回退）
+CORPUS_PROFILE = "merged"
+
 MAX_LEN = 150          # 词级截断长度；中文分词后序列比英文短，150 覆盖绝大多数评论
 MAX_VOCAB = 20000      # 词表上限，按词频取前 N 个
 MIN_FREQ = 2           # 出现次数低于此值的词不入表，记为 <unk>
@@ -38,6 +44,9 @@ EPOCHS = 15
 LEARNING_RATE = 1e-3
 RANDOM_SEED = 42
 VAL_RATIO = 0.1        # 从训练集切分验证集，用于选最优轮次
+# 合并语料**全局重划分**时的测试集比例。只在 CORPUS_PROFILE="merged" 时生效——
+# 单语料 profile 沿用语料自带的 train/test 划分，不重切（见 spec §8）。
+TEST_RATIO = 0.1
 
 # ---------------------------------------------------------------- 推理
 CONTRIB_MAX_TOKENS = 100  # 逐词贡献分析的参与词数上限，超出部分不分析

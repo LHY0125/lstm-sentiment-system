@@ -29,10 +29,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, NamedTuple
 
+import numpy as np
 import pyarrow.parquet as pq
 import requests
 
-from senti import config
+from senti import config, data
 
 # ---------------------------------------------------------------- 下载参数
 
@@ -662,6 +663,66 @@ def iter_rows(key: str) -> Iterator[Row]:
 def load_rows(key: str) -> list[Row]:
     """读出全部样本为列表。小语料够用；DMSC 这类请改用 iter_rows()。"""
     return list(iter_rows(key))
+
+
+# ---------------------------------------------------------------- 合并划分
+
+def load_merged_split() -> tuple[list[str], list[int], list[str], list[int]]:
+    """主语料 + 全部扩充语料**合并后全局重划分**，返回 (训练文本, 训练标签, 测试文本, 测试标签)。
+
+    与 `data.load_split()` 同形，可直接替换训练入口里的那一句。
+
+    为什么全局重切而不是各语料各留一份：本 profile 的定位是「用尽可能多的互联网评论
+    训一个通用模型」，因此测试集也必须来自同一个混合分布——否则量出来的是
+    「在 ChnSentiCorp 上有多准」，而不是「在多领域上有多准」。
+
+    划分**按文本随机**而非按语料分层：各语料的类别比例差异极大（DMSC 77.5% 积极、
+    外卖 33.4% 积极），全局随机切分能让三个集合的类别分布一致，这正是「同一分布里切三份」
+    所要求的。种子固定，可复现。
+    """
+    texts: list[str] = []
+    labels: list[int] = []
+
+    tr_texts, tr_labels, te_texts, te_labels = data.load_split()
+    texts.extend(tr_texts)
+    texts.extend(te_texts)
+    labels.extend(tr_labels)
+    labels.extend(te_labels)
+    print(f"  主语料 ChnSentiCorp：{len(tr_texts) + len(te_texts)} 条")
+
+    for key in CORPORA:
+        rows = list(iter_rows(key))
+        texts.extend(row.text for row in rows)
+        labels.extend(row.label for row in rows)
+        print(f"  扩充语料 {key}：{len(rows)} 条")
+
+    if not texts:
+        raise ValueError("没有任何语料，无法合并划分")
+
+    order = np.random.RandomState(config.RANDOM_SEED).permutation(len(texts))
+    n_test = max(1, int(len(texts) * config.TEST_RATIO))
+    test_idx, train_idx = order[:n_test], order[n_test:]
+
+    def take(idx: np.ndarray) -> tuple[list[str], list[int]]:
+        return [texts[i] for i in idx], [labels[i] for i in idx]
+
+    train_texts, train_labels = take(train_idx)
+    test_texts, test_labels = take(test_idx)
+
+    tr_pos = sum(train_labels) / len(train_labels)
+    te_pos = sum(test_labels) / len(test_labels)
+    print(
+        f"合并语料：共 {len(texts)} 条 → 训练 {len(train_texts)}（积极 {tr_pos:.1%}）"
+        f" / 测试 {len(test_texts)}（积极 {te_pos:.1%}）"
+    )
+    return train_texts, train_labels, test_texts, test_labels
+
+
+def load_training_split() -> tuple[list[str], list[int], list[str], list[int]]:
+    """训练入口使用的划分：按 `config.CORPUS_PROFILE` 选择单语料或合并语料。"""
+    if config.CORPUS_PROFILE == "merged":
+        return load_merged_split()
+    return data.load_split()
 
 
 # ---------------------------------------------------------------- 汇总
