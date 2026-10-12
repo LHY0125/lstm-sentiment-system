@@ -3578,7 +3578,7 @@ cd backend; ..\.venv\Scripts\python.exe -c "from senti import data; data.downloa
 # 2. 数据管线体检（必须先通过）
 ..\.venv\Scripts\python.exe -m senti.train --overfit-test
 
-# 3. 训练 6 组模型（约 <填实际耗时>）
+# 3. 训练 6 组模型（耗时随语料规模变化，见下方实测表）
 ..\.venv\Scripts\python.exe -m senti.train
 
 # 4. 启动后端
