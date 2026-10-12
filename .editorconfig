@@ -16,8 +16,9 @@ indent_size = 4
 # Markdown 里行尾两个空格是有意义的换行，不能自动删
 trim_trailing_whitespace = false
 
+# 注：不在此处按后缀覆盖 end_of_line。仓库的行尾由 `.gitattributes` 的
+# `* text=auto eol=lf` 统一（那份才决定 git 里存什么），这里再写一遍只会造成
+# 「编辑器写 CRLF、git 存 LF」的不一致。
+
 [Makefile]
 indent_style = tab
-
-[*.{bat,cmd}]
-end_of_line = crlf

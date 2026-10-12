@@ -44,8 +44,9 @@ EPOCHS = 15
 LEARNING_RATE = 1e-3
 RANDOM_SEED = 42
 VAL_RATIO = 0.1        # 从训练集切分验证集，用于选最优轮次
-# 合并语料**全局重划分**时的测试集比例。只在 CORPUS_PROFILE="merged" 时生效——
-# 单语料 profile 沿用语料自带的 train/test 划分，不重切（见 spec §8）。
+# 合并语料**全局重划分**时的测试集比例：先切出训练/测试，验证集再从训练集内部按
+# VAL_RATIO 切（见 train.split_train_val）。只在 CORPUS_PROFILE="merged" 时生效——
+# 单语料 profile 沿用语料自带的 train/test 划分，不重切。
 TEST_RATIO = 0.1
 
 # ---------------------------------------------------------------- 推理

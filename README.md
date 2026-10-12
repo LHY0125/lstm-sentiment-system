@@ -66,7 +66,7 @@
 
 ```powershell
 cd backend
-..\.venv\Scripts\python.exe -m senti.corpora                 # 下载全部（约 180 MB）并汇总
+..\.venv\Scripts\python.exe -m senti.corpora                 # 下载其余四个扩充语料（约 180 MB）并汇总
 ..\.venv\Scripts\python.exe -m senti.corpora --no-download    # 只汇总已下载的
 ..\.venv\Scripts\python.exe -m senti.corpora --keys DMSC      # 只处理某一个
 ```
@@ -90,24 +90,28 @@ cd backend
 ### 重新搭建环境
 
 ```powershell
-uv venv .venv --python "D:\settings\Language\Python\Python 3.13.13\python.exe"
-uv pip install --python .venv\Scripts\python.exe "d:/settings/Language/Python/库/torch-2.12.0+cu132-cp313-cp313-win_amd64.whl"
-uv pip install --python .venv\Scripts\python.exe jieba flask flask-cors pandas matplotlib scikit-learn pytest requests pyarrow
+# 依赖清单见 backend/requirements.txt（含 CUDA 版 torch 的安装说明）
+uv venv .venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r backend\requirements.txt
 cd frontend; pnpm install
 ```
 
-> `pyarrow` 用于读取原生划分的 parquet 语料（已并入上面这条安装命令）。
+> `uv venv --python 3.13` 假定 `uv` 能自行找到 3.13 解释器；机器上有多个版本时
+> 用 `--python <解释器绝对路径>` 指定即可。若要严格复现本机实测（CUDA 12.3 构建），
+> 按 `backend/requirements.txt` 顶部的说明改用 PyTorch 官方索引安装 torch。
 
 ## 运行
 
 ```powershell
-# 1. 下载语料
-cd backend; ..\.venv\Scripts\python.exe -c "from senti import data; data.download()"
+# 1. 下载语料（默认 profile 是五语料合并，两步都要跑）
+cd backend
+..\.venv\Scripts\python.exe -c "from senti import data; data.download()"   # 主语料 ChnSentiCorp
+..\.venv\Scripts\python.exe -m senti.corpora                              # 其余四个（约 180 MB）
 
 # 2. 数据管线体检（必须先通过）
 ..\.venv\Scripts\python.exe -m senti.train --overfit-test
 
-# 3. 训练 6 组模型（合并语料下本机实测约 4.5 小时：建词表+编码约 9 分钟，六组训练约 4.4 小时）
+# 3. 训练 6 组模型（合并语料下本机实测约 4.7 小时：建词表+编码约 9 分钟，六组训练约 4.5 小时）
 ..\.venv\Scripts\python.exe -m senti.train
 
 # 4. 启动后端
@@ -173,7 +177,12 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 htt
 | 单语料基线（ChnSentiCorp 9600 条训练） | 66.25% | 62.59% | 16.38% |
 | 合并语料（167 万条训练） | **92.16%** | **88.66%** | **5.58%** |
 
-（六组配置的平均值。）
+（六组配置的平均值。OOV 口径为**未截断的 token 级**：对测试集原始分词结果逐词查词表；
+若先按 `MAX_LEN=150` 截断再统计，两个数字分别变为 16.42% / 5.57%。）
+
+> **这是一次性对照实验的记录，不是可从本仓库一步复现的产物**：左边一列来自重训**之前**
+> 的 6 个 checkpoint（快照留在本机 `backend/artifacts_baseline/`，约 66 MB，**不入库**），
+> 右边来自当前 `backend/artifacts/`。两套产物都不随仓库发布，读者需自备才能重跑。
 
 **结论**：提升来自**跨域覆盖**，而不是「数据变多」本身。旧模型在自己语料的测试集上有 89.50%，
 换一张多领域混合测试集就掉到 **66.25%**——它学到的是那个语料的分布，不是「中文评论的情感」。
@@ -187,12 +196,13 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 htt
 - **排序与默认选中依据验证准确率，不依据测试准确率。** 对 6 个测试准确率取极大值会被系统性高估
   （winner's curse）：那个数字已经被「挑最好」这个过程本身筛过一遍。
 - **「训练耗时」是本机墙钟实测值**，不是模型的固有属性——换机器、换批次大小都会变。
-- **15 轮明显偏多**：六组的最优轮次都在**第 3–5 轮**，之后一路下滑（如 `lstm_l1_h256` 峰值 92.22% → 末轮 91.54%）。
+- **15 轮明显偏多**：六组的最优轮次都在**第 3–5 轮**，之后一路下滑（如 `lstm_l1_h256` 峰值 92.22% → 末轮 91.54%；逐轮曲线见 `backend/输出/*_curves.png`，未入库）。
   这正是「按验证集选最优轮次」这条纪律的价值——不加它，报告的就是过拟合后的权重。
 
 ### 已知局限
 
-**1. 词表顶到上限。** 合并语料的原始不同词数是 **396 923**，而 `MAX_VOCAB = 20000`，
+**1. 词表顶到上限。** 合并语料的原始不同词数是 **396 923**（建词表时统计并打印，
+未单独落盘），而 `MAX_VOCAB = 20000`，
 所以词表恰好停在 20 002。测试集因此仍有 **5.58%** 的 OOV。
 调大 `MAX_VOCAB` 是一个**待验证**的改进方向——它有代价（低频词的词向量学不准），
 需要实测，不能想当然。
@@ -204,6 +214,12 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 htt
 「空操作」与「模型确实不敏感」分开，两者落在同一个灰色档里。界面文案只说
 「本次遮挡没有产生可分辨的变化」而**不**说「模型认为它中性」。要真正分开需要接口多回一个字段。
 
+**3. 训练集与测试集之间存在文本级重复。** 划分是**按行**随机切、**不按文本去重**：
+实测 185 604 条测试行里有 **9.25%（17 169 条）**其文本也在训练集中出现过
+（成因是 DMSC 内部的重复短评，如「好看」出现 3684 次，不是跨语料串味）。
+它会把测试分数抬高约 **0.09–0.15 个百分点**（92.41% → 约 92.32%）——
+量级不大、不影响结论，但确实存在，如实记下；按文本去重是**待验证**的改进方向。
+
 > **一条已消失的误差**：上一版 README 记录过「默认模型把界面的『正面示例』判成消极（0.4234）」。
 > 合并语料重训后它**不再出现**：默认模型 `lstm_l2_h256` 现在给出积极 0.9288。
 > 那个误差的根因是训练语料单一导致词表覆盖不足——与这次的 OOV 下降是同一件事。
@@ -212,11 +228,12 @@ cd ..\backend; ..\.venv\Scripts\python.exe run_api.py   # 然后直接访问 htt
 ## 测试
 
 ```powershell
-cd backend; ..\.venv\Scripts\python.exe -m pytest -q      # 149 passed
+cd backend; ..\.venv\Scripts\python.exe -m pytest -q      # 152 passed
 cd ..\frontend; pnpm typecheck; pnpm lint; pnpm build
 ```
 
-后端测试覆盖数据层、模型层、训练层、推理层与接口契约（含 5 条路由的成功/失败路径与错误信封）；
+后端测试覆盖数据层、模型层、训练层（含 `evaluate_full` 的指标算式：准确率 / 平衡准确率 /
+多数类基线用桩模型构造已知混淆矩阵逐个钉死）、推理层与接口契约（含 5 条路由的成功/失败路径与错误信封）；
 前端本轮以 `typecheck` + `lint` + `build` 与浏览器人工走查验收，未引入测试运行器。
 
 > **已知未覆盖**：设计文档第 11 节风险表提到的「用接口测试断言后端不参与标签判定」未交付——

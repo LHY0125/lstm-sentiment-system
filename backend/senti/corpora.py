@@ -783,6 +783,12 @@ def main() -> int:
     args = parser.parse_args()
 
     targets = args.keys or list(CORPORA)
+    # 未知 key 要在这里拦下：放行会在 download()/summarize() 里以 KeyError 崩掉，
+    # 把一个「拼错了」的用法问题伪装成程序缺陷。
+    unknown = [key for key in targets if key not in CORPORA]
+    if unknown:
+        print(f"未知语料：{unknown}；可选：{list(CORPORA)}", file=sys.stderr)
+        return 2
     if not args.no_download:
         download_all(targets, force=args.force)
     summarize(targets)

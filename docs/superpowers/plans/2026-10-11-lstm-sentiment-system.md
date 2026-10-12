@@ -6,7 +6,7 @@
 
 **Architecture:** 训练期离线产出「模型 + 词表 + 元数据」三类产物，推理期只消费产物、不做训练。后端按数据层 / 模型层 / 训练层 / 推理层 / 接口层五层划分；「模型可切换」等价于切换一个 `.pt` 文件。前端经 Vite 代理访问 `/api`，开发期同源无 CORS。
 
-**Tech Stack:** Python 3.13.13 + PyTorch 2.12.0+cu132 + jieba + Flask + pandas + pytest｜React 18 + Vite + TypeScript + Tailwind v4 + pnpm + Biome
+**Tech Stack:** Python 3.13.13 + PyTorch 2.12.0+cu132 + jieba + Flask + pytest｜React 19 + Vite + TypeScript + Tailwind v4 + pnpm + Biome
 
 **Spec:** `docs/superpowers/specs/2026-10-11-lstm-sentiment-system-design.md`
 
@@ -3546,6 +3546,10 @@ Expected：页面加载，模型下拉有 6 个选项，可完成以下检查。
 ## 数据集
 
 ChnSentiCorp（中文情感分析语料，含酒店、电脑/电子、图书三域），沿用其原生 9600/1200 划分；来源见 `backend/senti/data.py`。
+
+> **（实现阶段更新）** 最终交付默认使用**五语料合并后全局重划分**的 profile
+> （`config.CORPUS_PROFILE = "merged"`），上面的单语料描述是计划阶段写下的基线；
+> 以 README 的「数据集」一节为准。
 
 ## 环境
 
