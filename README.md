@@ -19,6 +19,19 @@
 | 接口层 | `backend/senti/api.py` | Flask REST 接口 |
 | 前端 | `frontend/` | React + Vite + Tailwind |
 
+前端外观由**三层设计令牌**驱动，全部定义在 `frontend/src/index.css`：
+Primitive（原始色阶）→ Semantic（`--background` / `--surface` / `--foreground-*` /
+`--border` / `--positive` / `--negative` …）→ Component（`.card` / `.btn` / `.input` /
+`.badge` / `.tab` / `.num` …）。**组件里不出现 Tailwind 调色板类**（`bg-slate-800` 之类）
+也不出现硬编码色值——换主题只改语义层一处。
+
+令牌到工具类的映射写在 `@theme inline` 里而非普通 `@theme`：后者会把值**静态内联**进生成的
+工具类，`.dark` 的覆盖将完全失效（Tailwind v4 与 v3 在这一点上行为不同，是最容易踩的坑）。
+
+明暗两套由 `<html class="dark">` 切换（右上角按钮，选择存 localStorage，首次进入跟随系统），
+首帧之前由 `index.html` 内联脚本定色，避免深色用户看到一瞬白屏。
+两套主题下正文、次要文字、徽章、提示条与概率条文字的对比度均 **≥ 4.5:1（WCAG AA）**。
+
 训练期离线产出「模型 + 词表 + 元数据」三类产物（`backend/artifacts/`，不入库）；
 推理期只消费产物、不做训练，因此换模型等价于换一个 `.pt` 文件。
 超参数集中在 `backend/senti/config.py`，训练与推理代码里不出现字面量。

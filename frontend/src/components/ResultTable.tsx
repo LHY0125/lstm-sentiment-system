@@ -59,53 +59,45 @@ export function ResultTable({ items, threshold }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-foreground-muted">
           共 {items.length} 条，积极 {posCount} 条 / 消极 {items.length - posCount} 条
         </p>
-        <button
-          type="button"
-          onClick={exportCsv}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
+        <button type="button" onClick={exportCsv} className="btn btn-secondary">
           导出 CSV
         </button>
       </div>
 
       {/* 1000 行也只在**同一条**滚动容器里滚：表头 sticky 才不会跟着跑掉。
           行内只做 toFixed 与一次数值比较，没有任何按行重算的昂贵操作，故不需要虚拟列表。 */}
-      <div className="max-h-96 overflow-auto rounded-lg border border-slate-200">
+      <div className="card max-h-96 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-slate-50">
-            <tr className="text-left text-xs text-slate-500">
-              <th className="px-3 py-2 font-normal">#</th>
-              <th className="px-3 py-2 font-normal">文本</th>
-              <th className="px-3 py-2 font-normal">标签</th>
-              <th className="px-3 py-2 text-right font-normal">积极概率</th>
+          <thead className="sticky top-0 bg-surface-muted">
+            <tr>
+              <th className="table-head-cell">#</th>
+              <th className="table-head-cell">文本</th>
+              <th className="table-head-cell">标签</th>
+              <th className="table-head-cell text-right">积极概率</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
               const label = labelOf(row.prob_pos, threshold);
               return (
-                <tr key={row.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-400">{row.index + 1}</td>
+                <tr key={row.id} className="table-row">
+                  <td className="table-cell text-foreground-subtle">{row.index + 1}</td>
                   {/* 长评论用 truncate 截断，title 里留全文：1000 行时不能让单条把整表撑出横向滚动。
                       直接渲染成文本节点（不用 innerHTML）——评论原文是外部数据，不参与任何解析。 */}
-                  <td className="max-w-md truncate px-3 py-2" title={row.text}>
+                  <td className="table-cell max-w-md truncate" title={row.text}>
                     {row.text}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="table-cell">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        label === "积极"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-rose-100 text-rose-800"
-                      }`}
+                      className={`badge ${label === "积极" ? "badge-positive" : "badge-negative"}`}
                     >
                       {label}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-600">
+                  <td className="table-cell num text-right text-foreground-muted">
                     {row.prob_pos.toFixed(4)}
                   </td>
                 </tr>

@@ -224,7 +224,7 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <label htmlFor="batch-input" className="text-sm font-medium text-slate-700">
+        <label htmlFor="batch-input" className="field-label">
           每行一条评论
         </label>
         <textarea
@@ -237,8 +237,7 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
           }}
           rows={8}
           placeholder={"这家酒店很好，服务周到\n隔音差，晚上被吵醒\n性价比一般，凑合"}
-          className="w-full resize-y rounded-lg border border-slate-300 p-3 text-sm
-                     focus:border-slate-500 focus:outline-none"
+          className="input resize-y"
         />
       </div>
 
@@ -248,8 +247,7 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
           onClick={() => void analyze()}
           // 空输入与请求进行中都不许再发：前者没有可分析的文本，后者会产生竞态
           disabled={busy || !texts.length}
-          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="btn btn-primary"
         >
           {busy ? "分析中…" : `分析（${texts.length} 条）`}
         </button>
@@ -262,8 +260,7 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={busy}
-          className="text-sm text-slate-500 underline hover:text-slate-800
-                     disabled:cursor-not-allowed disabled:opacity-40"
+          className="btn-ghost"
         >
           或上传 CSV
         </button>
@@ -283,10 +280,8 @@ export function BatchAnalyzer({ modelId, maxLen, threshold }: Props) {
         />
       </div>
 
-      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-      {notice && (
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{notice}</p>
-      )}
+      {error && <p className="alert alert-error">{error}</p>}
+      {notice && <p className="alert alert-muted">{notice}</p>}
 
       {/* 表格把活的 threshold 透传下去：拖动阈值滑块，表里的标签与导出内容一起跟着变，不发请求 */}
       {items && <ResultTable items={items} threshold={threshold} />}

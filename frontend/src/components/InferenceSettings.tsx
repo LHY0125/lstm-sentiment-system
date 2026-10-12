@@ -28,13 +28,13 @@ export function InferenceSettings({
   onUseExplainChange,
 }: Props) {
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-slate-200 p-4">
+    <div className="card flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
-          <label htmlFor="inference-threshold" className="text-sm font-medium text-slate-700">
+          <label htmlFor="inference-threshold" className="field-label">
             判定阈值
           </label>
-          <span className="font-mono text-sm text-slate-500">{threshold.toFixed(2)}</span>
+          <span className="num text-sm text-foreground-subtle">{threshold.toFixed(2)}</span>
         </div>
         <input
           id="inference-threshold"
@@ -45,23 +45,23 @@ export function InferenceSettings({
           value={threshold}
           onChange={(e) => onThresholdChange(Number(e.target.value))}
           aria-describedby="inference-threshold-hint"
-          className="w-full accent-slate-700"
+          className="w-full accent-primary"
         />
-        <p id="inference-threshold-hint" className="text-xs text-slate-500">
+        <p id="inference-threshold-hint" className="hint">
           积极概率 ≥ 阈值即判为积极。阈值只影响标签，不改变概率，拖动即时生效、不重新请求。
           调高阈值会减少「积极」判定（更保守），调低则相反。
         </p>
         <button
           type="button"
           onClick={() => onThresholdChange(DEFAULT_THRESHOLD)}
-          className="self-start text-xs text-slate-500 underline hover:text-slate-800"
+          className="btn-ghost self-start text-xs"
         >
           恢复默认 {DEFAULT_THRESHOLD.toFixed(2)}
         </button>
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor="inference-max-len" className="text-sm font-medium text-slate-700">
+        <label htmlFor="inference-max-len" className="field-label">
           最大词数（MAX_LEN）
         </label>
         <input
@@ -78,10 +78,9 @@ export function InferenceSettings({
             if (!Number.isNaN(next)) onMaxLenChange(next);
           }}
           aria-describedby="inference-max-len-hint"
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm
-                     focus:border-slate-500 focus:outline-none"
+          className="input"
         />
-        <p id="inference-max-len-hint" className="text-xs text-slate-500">
+        <p id="inference-max-len-hint" className="hint">
           超出部分截断。与阈值不同，这一项改变的是送进模型的分词结果，改完需重新请求才生效。
           本界面限定 5–1000；超出后端可接受范围的值不报错，会被静默换成默认的 150 词。
         </p>
@@ -95,13 +94,13 @@ export function InferenceSettings({
             checked={useExplain}
             onChange={(e) => onUseExplainChange(e.target.checked)}
             aria-describedby="inference-use-explain-hint"
-            className="accent-slate-700"
+            className="accent-primary"
           />
-          <label htmlFor="inference-use-explain" className="text-sm text-slate-700">
+          <label htmlFor="inference-use-explain" className="text-sm text-foreground">
             显示逐词贡献（遮挡法，明显更慢）
           </label>
         </div>
-        <p id="inference-use-explain-hint" className="text-xs text-slate-500">
+        <p id="inference-use-explain-hint" className="hint">
           勾选后请求 /api/explain：逐个词位遮住重跑一遍前向（最多 100 次，另加 1 次基线），
           而单次预测只要 1 次；概率与标签不变，多出来的是每个词的遮挡敏感度。
         </p>

@@ -3,7 +3,9 @@ import { BatchAnalyzer } from "./components/BatchAnalyzer";
 import { InferenceSettings } from "./components/InferenceSettings";
 import { ModelSelector } from "./components/ModelSelector";
 import { SingleAnalyzer } from "./components/SingleAnalyzer";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { useModels } from "./hooks/useModels";
+import { useTheme } from "./hooks/useTheme";
 import { DEFAULT_THRESHOLD } from "./types";
 
 /** MAX_LEN 输入框的初值。与后端 `senti/config.py` 的 `MAX_LEN` 保持一致——
@@ -25,6 +27,7 @@ type Tab = "single" | "batch";
  *  单条分析与批量分析是互斥的两个页签，同一时刻只有一个在场，故这里天然只有一份。 */
 export default function App() {
   const { models, loading, error } = useModels();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [pickedId, setPickedId] = useState("");
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const [maxLen, setMaxLen] = useState(DEFAULT_MAX_LEN);
@@ -42,27 +45,38 @@ export default function App() {
   const modelId = models.some((m) => m.id === pickedId) ? pickedId : (models[0]?.id ?? "");
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-4">
-          <h1 className="text-lg font-semibold text-slate-900">网络评论情感分类系统</h1>
-          <p className="text-xs text-slate-500">基于 LSTM 的中文评论情感二分类 · 遮挡法逐词贡献</p>
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-surface">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">
+              网络评论情感分类系统
+            </h1>
+            <p className="mt-0.5 text-xs text-foreground-subtle">
+              基于 LSTM 的中文评论情感二分类 · 遮挡法逐词贡献
+            </p>
+          </div>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
       </header>
 
       <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-6">
-        {loading && <p className="text-sm text-slate-500">正在加载模型列表…</p>}
+        {loading && <p className="text-sm text-foreground-subtle">正在加载模型列表…</p>}
         {error && (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p className="alert alert-error">
             无法连接后端：{error}
             <br />
-            请先启动后端：<code>cd backend &amp;&amp; ..\.venv\Scripts\python.exe run_api.py</code>
+            请先启动后端：
+            <code className="num">
+              cd backend &amp;&amp; ..\.venv\Scripts\python.exe run_api.py
+            </code>
           </p>
         )}
 
         {!loading && !error && models.length === 0 && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            后端尚无已训练模型。请先运行 <code>python -m senti.train</code> 完成训练。
+          <p className="alert alert-warning">
+            后端尚无已训练模型。请先运行 <code className="num">python -m senti.train</code>{" "}
+            完成训练。
           </p>
         )}
 
@@ -72,17 +86,13 @@ export default function App() {
         {models.length > 0 && modelId !== "" && (
           <div className="grid gap-6 md:grid-cols-[1fr_320px]">
             <div className="flex flex-col gap-4">
-              <div className="flex gap-1 border-b border-slate-200">
+              <div className="flex gap-1 border-b border-border">
                 {(["single", "batch"] as Tab[]).map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setTab(t)}
-                    className={`-mb-px border-b-2 px-4 py-2 text-sm ${
-                      tab === t
-                        ? "border-slate-800 font-medium text-slate-900"
-                        : "border-transparent text-slate-500 hover:text-slate-800"
-                    }`}
+                    className={`tab ${tab === t ? "tab-active" : "tab-idle"}`}
                   >
                     {t === "single" ? "单条分析" : "批量分析"}
                   </button>
@@ -102,7 +112,7 @@ export default function App() {
                       刻意不点名具体模型**也不写具体数值**：那会把一句关于方法论的说明
                       写成版本相关的八卦，换一次 checkpoint 就过期（上一版这里抄的
                       0.4234 就随着合并语料重训而失效了）。 */}
-                  <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  <p className="alert alert-muted text-xs">
                     「正面 / 负面 /
                     中性示例」按钮只是演示用的句子，不是正确答案。单句判定随所选模型的
                     权重变化，同一句在不同模型下可能给出相反的标签——那是模型之间的差异，不是界面出错。
@@ -120,19 +130,17 @@ export default function App() {
             </div>
 
             <aside className="flex flex-col gap-4">
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="card p-4">
                 <ModelSelector models={models} selectedId={modelId} onSelect={setPickedId} />
               </div>
-              <div className="rounded-lg bg-white">
-                <InferenceSettings
-                  threshold={threshold}
-                  onThresholdChange={setThreshold}
-                  maxLen={maxLen}
-                  onMaxLenChange={setMaxLen}
-                  useExplain={useExplain}
-                  onUseExplainChange={setUseExplain}
-                />
-              </div>
+              <InferenceSettings
+                threshold={threshold}
+                onThresholdChange={setThreshold}
+                maxLen={maxLen}
+                onMaxLenChange={setMaxLen}
+                useExplain={useExplain}
+                onUseExplainChange={setUseExplain}
+              />
             </aside>
           </div>
         )}

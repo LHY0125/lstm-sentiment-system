@@ -92,8 +92,7 @@ export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props
         onChange={(e) => setText(e.target.value)}
         rows={4}
         placeholder="输入一条中文评论，例如：这家酒店位置很好，但隔音太差……"
-        className="w-full resize-y rounded-lg border border-slate-300 p-3 text-sm
-                   focus:border-slate-500 focus:outline-none"
+        className="input resize-y"
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -102,8 +101,7 @@ export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props
           onClick={() => void analyze()}
           // 空输入与请求进行中都不许再发请求：前者后端没有可分析的文本，后者会产生竞态
           disabled={busy || !text.trim()}
-          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          className="btn btn-primary"
         >
           {/* explain 是 101 次前向、单次预测只要 1 次，等待时长差一个量级；
               文案分开写，让用户知道「慢」是预期而不是卡住了 */}
@@ -115,14 +113,14 @@ export function SingleAnalyzer({ modelId, maxLen, useExplain, threshold }: Props
             key={ex.label}
             type="button"
             onClick={() => setText(ex.text)}
-            className="text-xs text-slate-500 underline hover:text-slate-800"
+            className="btn-ghost text-xs"
           >
             {ex.label}示例
           </button>
         ))}
       </div>
 
-      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
 
       {probPos !== null && (
         <>

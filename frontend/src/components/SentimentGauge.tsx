@@ -21,32 +21,28 @@ export function SentimentGauge({ probPos, probNeg, label }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline gap-3">
-        <span className="text-sm text-slate-500">判定结果</span>
-        <span
-          className={`rounded-full px-3 py-0.5 text-sm font-medium ${
-            label === "积极" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-          }`}
-        >
+        <span className="text-sm text-foreground-subtle">判定结果</span>
+        <span className={`badge ${label === "积极" ? "badge-positive" : "badge-negative"}`}>
           {label}
         </span>
       </div>
 
-      <div className="flex h-6 overflow-hidden rounded-full bg-slate-100">
+      <div className="flex h-6 overflow-hidden rounded-full bg-surface-muted">
         <div
-          className="flex items-center justify-start bg-emerald-500 pl-2 text-xs text-white transition-all"
+          className="flex items-center justify-start bg-gauge-pos pl-2 text-xs text-gauge-fg transition-all"
           style={{ width: `${pct}%` }}
         >
           {pct >= 15 && `积极 ${pct}%`}
         </div>
         <div
-          className="flex flex-1 items-center justify-end bg-rose-500 pr-2 text-xs text-white transition-all"
+          className="flex flex-1 items-center justify-end bg-gauge-neg pr-2 text-xs text-gauge-fg transition-all"
           style={{ width: `${100 - pct}%` }}
         >
           {100 - pct >= 15 && `消极 ${100 - pct}%`}
         </div>
       </div>
 
-      <div className="flex justify-between font-mono text-xs text-slate-500">
+      <div className="num flex justify-between text-xs text-foreground-subtle">
         <span>积极 {probPos.toFixed(4)}</span>
         <span>消极 {probNeg.toFixed(4)}</span>
       </div>

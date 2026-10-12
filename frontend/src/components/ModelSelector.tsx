@@ -29,15 +29,14 @@ export function ModelSelector({ models, selectedId, onSelect }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor="model-select" className="text-sm font-medium text-slate-700">
+      <label htmlFor="model-select" className="field-label">
         模型
       </label>
       <select
         id="model-select"
         value={selectedId}
         onChange={(e) => onSelect(e.target.value)}
-        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm
-                   focus:border-slate-500 focus:outline-none"
+        className="input"
       >
         {models.map((m) => (
           <option key={m.id} value={m.id}>
@@ -48,33 +47,33 @@ export function ModelSelector({ models, selectedId, onSelect }: Props) {
       </select>
 
       {selected && (
-        <dl className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+        <dl className="grid grid-cols-3 gap-2 rounded-lg bg-surface-muted p-3 text-xs text-foreground-muted">
           <div>
-            <dt className="text-slate-500">测试准确率</dt>
-            <dd className="font-mono text-slate-900">{(selected.test_acc * 100).toFixed(2)}%</dd>
+            <dt className="text-foreground-subtle">测试准确率</dt>
+            <dd className="num text-foreground">{(selected.test_acc * 100).toFixed(2)}%</dd>
           </div>
           <div>
-            <dt className="text-slate-500">平衡准确率</dt>
-            <dd className="font-mono text-slate-900">
+            <dt className="text-foreground-subtle">平衡准确率</dt>
+            <dd className="num text-foreground">
               {(selected.test_balanced_acc * 100).toFixed(2)}%
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">多数类基线</dt>
+            <dt className="text-foreground-subtle">多数类基线</dt>
             {/* 测试集里多数类的占比：准确率的「无脑参照线」。没有它就不知道
                 92% 到底是好还是仅仅「数据集偏斜」 */}
-            <dd className="font-mono text-slate-900">
+            <dd className="num text-foreground">
               {(selected.majority_baseline * 100).toFixed(2)}%
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">参数量</dt>
+            <dt className="text-foreground-subtle">参数量</dt>
             {/* params 是 2.6M–3.5M 的裸整数，分组显示；不分组就是一长串数字，读不出量级 */}
-            <dd className="font-mono text-slate-900">{selected.params.toLocaleString()}</dd>
+            <dd className="num text-foreground">{selected.params.toLocaleString()}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">本机训练耗时</dt>
-            <dd className="font-mono text-slate-900">{selected.train_time_sec.toFixed(0)} s</dd>
+            <dt className="text-foreground-subtle">本机训练耗时</dt>
+            <dd className="num text-foreground">{selected.train_time_sec.toFixed(0)} s</dd>
           </div>
         </dl>
       )}

@@ -1,8 +1,382 @@
 @import "tailwindcss";
 
-/* 逐词贡献高亮用到的三个色阶变量，供 TokenHighlight 组件引用 */
+/* ═══════════════════════════════════════════════════════════════════════════
+   设计令牌（Design Tokens）
+
+   三层结构，与 ui-ux-pro-max 的 token-architecture 一致：
+
+     1. Primitive  —— 原始值（oklch 色阶、圆角、字体栈），无语义，改这里等于换底
+     2. Semantic   —— 按**用途**起名（background / surface / border / positive…）
+     3. Component  —— 按**组件**起名（--card-*、--contrib-*），只引用语义层
+
+   改外观时只动第 2 层：把 --primary 从深墨改成品牌蓝，全站跟着变，不必翻组件。
+
+   ⚠️ Tailwind v4 与 v3 的落地方式不同，这里是**必须注意**的一处：
+   v3 用 tailwind.config.ts 把 CSS 变量包成 `hsl(var(--x))`；
+   v4 没有配置文件，改用 `@theme` 块 —— 而 `@theme`（不带 inline）会把值**静态内联**进
+   生成的工具类里，`.dark` 的覆盖将完全失效。故颜色命名空间一律写成 `@theme inline`，
+   让工具类输出 `var(--background)` 这种**运行时可解析**的引用。
+
+   暗色模式走类切换（`<html class="dark">`）而不是 v4 默认的「跟随系统」：
+   跟随系统时用户在页面里改不了，也就给不出一个可点的切换钮。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ───────────────────────────────────────────────────────────────────────────
+   第 1 层 · Primitive —— 原始值。只被语义层引用，绝不在组件里直接用。
+   ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --contrib-pos: oklch(0.62 0.15 250);   /* 积极贡献：蓝 */
-  --contrib-neg: oklch(0.68 0.16 55);    /* 消极贡献：橙 */
-  --contrib-neutral: oklch(0.92 0 0);    /* 无明显贡献：灰 */
+  /* 中性色阶：冷灰（色相 260 偏蓝一点点）。技术工具用它比纯灰更有质感，
+     也比暖灰更「冷」，与深色主题的投影观感一致。 */
+  --ink-50: oklch(0.988 0.002 260);
+  --ink-100: oklch(0.975 0.003 260);
+  --ink-200: oklch(0.955 0.004 260);
+  --ink-300: oklch(0.922 0.005 260);
+  --ink-400: oklch(0.868 0.007 260);
+  --ink-500: oklch(0.700 0.01 260);
+  --ink-600: oklch(0.585 0.012 260);
+  --ink-700: oklch(0.48 0.013 260);
+  --ink-800: oklch(0.375 0.013 260);
+  --ink-900: oklch(0.285 0.012 260);
+  --ink-950: oklch(0.215 0.011 260);
+  --ink-1000: oklch(0.165 0.01 260);
+
+  /* 情感色。积极=青绿、消极=玫红是国际惯例，不另造语义。 */
+  --emerald-100: oklch(0.95 0.035 160);
+  --emerald-500: oklch(0.66 0.14 160);
+  --emerald-700: oklch(0.45 0.105 160);
+  --rose-100: oklch(0.95 0.028 15);
+  --rose-500: oklch(0.63 0.185 15);
+  --rose-700: oklch(0.46 0.16 15);
+  --amber-100: oklch(0.96 0.045 85);
+  --amber-800: oklch(0.48 0.105 70);
+
+  /* 逐词贡献的发散色阶：蓝（推积极）— 灰（无变化）— 橙（推消极）。
+     是有方向的量，故用发散色阶而非单色阶——单色会把「强烈积极」与「强烈消极」画成一样。 */
+  --blue-500: oklch(0.62 0.15 250);
+  --orange-500: oklch(0.68 0.16 55);
+  --blue-900: oklch(0.44 0.15 250);
+  --orange-900: oklch(0.47 0.14 55);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   第 2 层 · Semantic —— 按用途命名。**主题切换只改这一层**。
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --background: var(--ink-100); /* 页面底色：比纯白低一档，卡片才浮得起来 */
+  --surface: oklch(1 0 0); /* 卡片 / 顶栏 */
+  --surface-muted: var(--ink-200); /* 次级面板、表头、代码块 */
+
+  --foreground: var(--ink-900); /* 正文与标题 */
+  --foreground-muted: var(--ink-800); /* 次要文字：说明、表头 */
+  /* 第三级：提示、脚注。**取 ink-700 而不是更浅的 ink-600**——ink-600 压在本主题的底上
+     只有 3.9:1，够不到正文 AA（4.5:1），而这一档正是 12px 提示文字的用色。
+     实测值见提交说明里的对比度审计。 */
+  --foreground-subtle: var(--ink-700);
+
+  --border: var(--ink-300); /* 分隔线与卡片描边 */
+  --border-strong: var(--ink-400); /* 输入框描边（需要比分隔线更清楚） */
+  --ring: oklch(0.55 0.14 255); /* 键盘焦点环 */
+
+  --primary: var(--ink-950); /* 主操作：深墨按钮，技术工具的主流做法 */
+  --primary-hover: var(--ink-800);
+  --primary-foreground: oklch(1 0 0);
+
+  --positive: var(--emerald-500);
+  --positive-soft: var(--emerald-100);
+  --positive-strong: var(--emerald-700);
+  --negative: var(--rose-500);
+  --negative-soft: var(--rose-100);
+  --negative-strong: var(--rose-700);
+  --warning-soft: var(--amber-100);
+  --warning-strong: var(--amber-800);
+}
+
+.dark {
+  --background: var(--ink-1000);
+  --surface: var(--ink-950);
+  --surface-muted: oklch(0.255 0.011 260);
+  --foreground: oklch(0.955 0.004 260);
+  --foreground-muted: oklch(0.8 0.009 260);
+  --foreground-subtle: oklch(0.68 0.011 260);
+  --border: oklch(0.32 0.011 260);
+  --border-strong: oklch(0.42 0.012 260);
+  --ring: oklch(0.72 0.13 255);
+
+  /* 主操作在深色下**反转**成浅色块：深墨按钮贴在深底上等于没有按钮 */
+  --primary: oklch(0.945 0.004 260);
+  --primary-hover: oklch(0.87 0.006 260);
+  --primary-foreground: var(--ink-950);
+
+  /* 情感色在深底上要整体提亮、并把「柔和底色」压暗，否则 100 号色块会刺眼 */
+  --positive: oklch(0.72 0.13 160);
+  --positive-soft: oklch(0.3 0.055 160);
+  --positive-strong: oklch(0.85 0.11 160);
+  --negative: oklch(0.7 0.17 15);
+  --negative-soft: oklch(0.31 0.07 15);
+  --negative-strong: oklch(0.85 0.12 15);
+  --warning-soft: oklch(0.33 0.06 75);
+  --warning-strong: oklch(0.88 0.105 85);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   第 3 层 · Component —— 只引用语义层，不出现原始值。
+   组件令牌以 CSS 变量 + `.类` 两种形态给出：变量供内联 style / color-mix 用，
+   类供 className 复用（v4 里组件层的惯用形态，等价于 skill 里的 --button-bg 一族）。
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --card-bg: var(--surface);
+  --card-border: var(--border);
+  --card-radius: 0.75rem;
+
+  --input-bg: var(--surface);
+  --input-border: var(--border-strong);
+  --input-focus-border: var(--ring);
+
+  --gauge-track: var(--surface-muted);
+  /* 概率条本身是**承载文字的彩色块**（「积极 93%」写在条里），所以它的底色不能直接
+     取 --positive / --negative：那两个是按「色块」调的（亮度 0.63~0.66），
+     白字压上去只有 ~3:1，达不到正文对比度。这里另给一组更深的底色，
+     专供「条上写字」这个用途，两套主题下与 --gauge-fg 都能过 AA。 */
+  --gauge-pos-bg: oklch(0.5 0.15 160);
+  --gauge-neg-bg: oklch(0.48 0.19 15);
+  --gauge-fg: oklch(0.99 0 0);
+
+  /* 逐词贡献：填充色 + 文字色两份。
+     文字色不能直接拿填充色当：填充色是按**块面**调的（亮度 0.62~0.68），
+     压在底色上做小字只有 ~2:1 对比度。故单独给一份压深的文字色。 */
+  --contrib-pos: var(--blue-500);
+  --contrib-neg: var(--orange-500);
+  --contrib-neutral: oklch(0.92 0 0);
+  --contrib-pos-ink: var(--blue-900);
+  --contrib-neg-ink: var(--orange-900);
+  --contrib-neutral-ink: var(--ink-600);
+}
+
+.dark {
+  /* 深底上「无变化」那一档必须反转为深灰，否则一片亮灰把整句的对比全吃掉 */
+  --contrib-neutral: oklch(0.33 0 0);
+  --contrib-pos-ink: oklch(0.8 0.12 250);
+  --contrib-neg-ink: oklch(0.82 0.12 55);
+  --contrib-neutral-ink: oklch(0.75 0.01 260);
+
+  /* 条底色**不**跟着主题提亮：一提亮，条上的白字就掉到 4.2:1，低于 AA 的 4.5:1。
+     0.50 的青绿压在 0.165 的页面底上仍有约 3.5:1 的非文字对比度，与背景分得开，够用。 */
+  --gauge-pos-bg: oklch(0.5 0.15 160);
+  --gauge-neg-bg: oklch(0.48 0.19 15);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Tailwind 映射
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* 静态值：不随主题变，用普通 @theme（会被内联进工具类，本来就该是常量） */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei",
+    "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", Consolas, "SFMono-Regular",
+    Menlo, monospace;
+
+  --radius-control: 0.5rem; /* 按钮 / 输入框 */
+  --radius-card: 0.75rem; /* 卡片 */
+}
+
+/* 颜色：必须 inline，否则 var() 在构建期被解析成固定值，.dark 覆盖失效 */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-positive-strong: var(--positive-strong);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-negative-strong: var(--negative-strong);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-strong: var(--warning-strong);
+
+  --color-gauge-pos: var(--gauge-pos-bg);
+  --color-gauge-neg: var(--gauge-neg-bg);
+  --color-gauge-fg: var(--gauge-fg);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   基础层
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark; /* 让原生滚动条 / 表单控件跟着变深，不然深色主题会露出白色滚动条 */
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 键盘焦点环：用原生 outline 而不是 ring 工具类，免得与组件上已有的
+     focus:border-* 叠加出两圈。鼠标点击不触发（:focus-visible 的语义）。 */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--ring) 30%, transparent);
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   组件层
+   把重复出现的样式串收进一处：主按钮的样式串原先在 SingleAnalyzer 与
+   BatchAnalyzer 里各写一遍，改一次要改两处——那正是设计系统要消灭的东西。
+   ─────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  .card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--card-radius);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center text-sm font-medium transition-colors
+           disabled:cursor-not-allowed disabled:opacity-40;
+    border-radius: var(--radius-control);
+  }
+
+  .btn-primary {
+    @apply px-4 py-2;
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+  }
+
+  .btn-secondary {
+    @apply px-3 py-1.5;
+    background-color: var(--surface);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--surface-muted);
+  }
+
+  /* 文字按钮：看起来像链接、但语义上是按钮（示例句、恢复默认、上传 CSV） */
+  .btn-ghost {
+    @apply underline;
+    color: var(--foreground-subtle);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--foreground);
+  }
+
+  .input {
+    @apply w-full px-3 py-2 text-sm;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-control);
+    color: var(--foreground);
+  }
+  .input::placeholder {
+    color: var(--foreground-subtle);
+  }
+  .input:focus {
+    border-color: var(--input-focus-border);
+  }
+
+  .badge {
+    @apply inline-block rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+  .badge-positive {
+    background-color: var(--positive-soft);
+    color: var(--positive-strong);
+  }
+  .badge-negative {
+    background-color: var(--negative-soft);
+    color: var(--negative-strong);
+  }
+
+  .alert {
+    @apply px-3 py-2 text-sm;
+    border-radius: var(--radius-control);
+  }
+  .alert-error {
+    background-color: var(--negative-soft);
+    color: var(--negative-strong);
+  }
+  .alert-warning {
+    background-color: var(--warning-soft);
+    color: var(--warning-strong);
+  }
+  .alert-muted {
+    background-color: var(--surface-muted);
+    color: var(--foreground-muted);
+  }
+
+  /* 表格：表头行与分隔线共用一套，避免逐处写 border-* */
+  .table-head-cell {
+    @apply px-3 py-2 text-left text-xs font-normal;
+    color: var(--foreground-subtle);
+  }
+  .table-cell {
+    @apply px-3 py-2;
+  }
+  .table-row {
+    border-top: 1px solid var(--border);
+  }
+
+  /* 数字：等宽 + 表格数字对齐。概率、参数量、耗时全部走这个，
+     数字宽度一致时纵向才扫得动。 */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
+  .field-label {
+    @apply text-sm font-medium;
+    color: var(--foreground);
+  }
+
+  .hint {
+    @apply text-xs;
+    color: var(--foreground-subtle);
+  }
+
+  /* 页签：选中态用**下边框**而不是背景块——两个页签的视觉重量差异要小，
+     否则切换时整块区域都在闪。 */
+  .tab {
+    @apply -mb-px border-b-2 px-4 py-2 text-sm;
+  }
+  .tab-active {
+    @apply border-primary font-medium;
+    color: var(--foreground);
+  }
+  .tab-idle {
+    @apply border-transparent;
+    color: var(--foreground-subtle);
+  }
+  .tab-idle:hover {
+    color: var(--foreground);
+  }
 }

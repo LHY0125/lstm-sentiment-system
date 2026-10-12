@@ -5,6 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>网络评论情感分类系统</title>
+    <script>
+      // 在首帧之前把主题类打到 <html> 上，否则深色用户会先看到一瞬白屏再翻黑。
+      // 逻辑必须与 src/hooks/useTheme.ts 的 initialTheme 保持一致：
+      // 已存的选择 > 系统偏好 > 浅色。localStorage 不可用时按浅色走。
+      (function () {
+        try {
+          var stored = localStorage.getItem("senti-theme");
+          var dark = stored
+            ? stored === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {
+          /* 拿不到偏好就按浅色，不影响功能 */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -111,11 +111,12 @@ function background(polarity: Polarity, intensity: number): string {
 
 /** 表格里方向文字的**文字色**。
  *
- *  不能直接拿 `--contrib-*` 当文字色：这三个变量是按**填充**调的，亮度 0.66~0.92，
- *  压在白底上只有 ~2:1 对比度，比原来的 `text-*-700` 还难读。所以对同一个变量往黑里
- *  压一档——改 `index.css` 就能同时挪动整句与表格（只有一个色源），可读性又不丢。 */
+ *  不能直接拿 `--contrib-*`（填充色）当文字色：那三个是按**块面**调的（亮度 0.62~0.92），
+ *  当小字压上去只有 ~2:1 对比度。故在令牌层另给一份 `-ink`——它在浅色下压深、
+ *  在深色下提亮，两份色值都由 `index.css` 维护。这里只负责引用；
+ *  「往黑里压一档」这种调色决策属于令牌，不属于这个组件。 */
 function directionTextColor(polarity: Polarity): string {
-  return `color-mix(in oklch, var(--contrib-${polarity}) 60%, black)`;
+  return `var(--contrib-${polarity}-ink)`;
 }
 
 /** 逐词贡献高亮：整句着色 + 影响最大的词排名表。
@@ -181,7 +182,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">逐词贡献（遮挡法）</h3>
+        <h3 className="mb-2 text-sm font-medium text-foreground">逐词贡献（遮挡法）</h3>
         <p className="flex flex-wrap gap-1 text-base leading-relaxed">
           {cells.map((cell) =>
             cell.kind === "analysed" ? (
@@ -206,7 +207,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
               // 分不开这两档。
               <span
                 key={cell.id}
-                className="rounded border border-dashed border-slate-300 px-1 py-0.5 text-slate-400"
+                className="rounded border border-dashed border-border-strong px-1 py-0.5 text-foreground-subtle"
                 title="未分析：逐词贡献只覆盖前若干词"
               >
                 {cell.token}
@@ -214,7 +215,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
             ),
           )}
         </p>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-foreground-subtle">
           蓝色 = 推高积极判定；橙色 = 推高消极判定；颜色越深影响越大。灰色 = 本次遮挡没有产生
           可分辨的变化（删去该词后概率不变）——这不等于「模型认为它中性」：若该词不在词表内，
           遮挡本身是空操作（改写前后序列完全相同，delta 字面为 0），这次测量什么都没测到。
@@ -223,7 +224,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
             <>
               {" "}
               虚线框的词
-              <strong className="font-semibold text-slate-500">未分析</strong>
+              <strong className="font-semibold text-foreground-muted">未分析</strong>
               （逐词贡献只覆盖前 {covered} 词），与「测得无影响」不是一回事。
             </>
           )}
@@ -231,7 +232,7 @@ export function TokenHighlight({ tokens, contributions }: Props) {
         {/* 防御性提示：长度或身份对不上都属于响应自相矛盾（后端契约不会产生），
             但静默按错位的对子渲染又是一次信息销毁，所以让它可见。 */}
         {misalignedReason !== "" && (
-          <p className="mt-1 text-xs text-amber-700">
+          <p className="mt-1 text-xs text-warning-strong">
             响应异常：逐词贡献与分词结果没有逐位对齐（{misalignedReason}
             ）。显示的词来自分词结果、颜色与数值来自逐词贡献，两者已经错配，请勿据此下结论。
           </p>
@@ -239,11 +240,11 @@ export function TokenHighlight({ tokens, contributions }: Props) {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-medium text-slate-700">影响最大的词</h3>
+        <h3 className="mb-2 text-sm font-medium text-foreground">影响最大的词</h3>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-xs text-slate-400">
-              <th className="py-1 font-normal">词</th>
+            <tr className="border-b border-border text-xs text-foreground-subtle">
+              <th className="py-1 text-left font-normal">词</th>
               <th className="py-1 text-right font-normal">影响</th>
               {/* 方向列写「积极/消极/无变化」而不是只放一个色块：颜色不能是唯一的语义通道 */}
               <th className="py-1 text-right font-normal">方向</th>
@@ -251,9 +252,9 @@ export function TokenHighlight({ tokens, contributions }: Props) {
           </thead>
           <tbody>
             {top.map((row) => (
-              <tr key={row.id} className="border-b border-slate-100">
+              <tr key={row.id} className="border-b border-border">
                 <td className="py-1">{row.token}</td>
-                <td className="py-1 text-right font-mono">{Math.abs(row.delta).toFixed(4)}</td>
+                <td className="num py-1 text-right">{Math.abs(row.delta).toFixed(4)}</td>
                 <td className="py-1 text-right">
                   <span style={{ color: directionTextColor(row.polarity) }}>
                     {POLARITY_LABEL[row.polarity]}
