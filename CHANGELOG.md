@@ -5,7 +5,40 @@
 
 ## [未发布]
 
-（暂无）
+### 新增
+
+- **线上部署**：已部署至腾讯云并接入公网 `https://senti-lstm.liuhangyv.top`。
+  链路为「ESA（CDN + TLS 终止）→ 阿里云 openresty 反代 → 阿里云 frps
+  `:18300` → frpc 隧道 → 腾讯云 `127.0.0.1:8300` → 容器 `senti-lstm:1.0.0`」。
+  容器**只绑回环**，公网入口仅经反代——该服务没有鉴权，不宜直接暴露。
+
+### 变更
+
+- `docker-compose.server.yml` 按目标机实机校准三处：新增 `cpus: "1.0"`
+  （`explain` 一次 = 101 次串行前向，`mem_limit` 管不到 CPU）；
+  `mem_limit` 由 `768m` 提到 `1g`（该机可用内存约 1.2 GiB 且**没有 swap**，
+  OOM 不会退化成变慢而是直接杀进程）；头部注明 frpc 链路与无 swap 的警告。
+
+### 线上验收
+
+以公网域名实测（非本机回环），全部通过：
+
+
+| 检查项                              | 结果                                                  |
+| ------------------------------------- | ------------------------------------------------------- |
+| HTTPS / 首页                        | 200；首页 1195 B，与本地 `frontend/dist/index.html` 同长 |
+| 静态资源                            | `index-*.js` 259 KB、`index-*.css` 18.7 KB、favicon 均 200 |
+| `GET /api/health`                   | 200                                                    |
+| `GET /api/models`                   | 6 个模型，按**验证**准确率降序                        |
+| `POST /api/predict`（正/负样例）    | `label=1 (pos 0.9677)` / `label=0 (neg 0.9715)`        |
+| `POST /api/explain`                 | 8 个 token 贡献，耗时 **0.365 s**                     |
+| `POST /api/batch`                   | 2 条，耗时 0.246 s                                    |
+| `GET /api/nope`                     | **404 + JSON 信封**（未被前端兜底路由吞成 200 首页）  |
+| 容器健康                            | `healthy`，重启次数 0；cgroup 实测 `cpus=1`、`mem=1g` |
+
+**产物挂载**：`/opt/senti-lstm/artifacts/`（宿主属主 `10001:10001`，与容器
+`USER app` 的 uid 对齐）——挂载 8 个文件（6 个 `.pt` + `vocab.json` + `meta.json`）。
+未挂对时的表现是 `/api/models` 返回 `[]` 而健康检查仍通过，故验收**同时**核这两项。
 
 ## [1.0.0] - 2026-10-13
 
