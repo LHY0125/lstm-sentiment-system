@@ -11,6 +11,9 @@ frontend/dist/
 *.log
 backend/artifacts_baseline/
 
+# 镜像导出物（docker save 的产物，数百 MB，只用于 scp 上服务器）
+dist/
+
 # 课程材料：老师提供的任务书与报告模板，不是本项目作品，不随开源发布。
 # 仅从仓库移除，磁盘上保留（交作业还要用）。
 docs/《神经网络与深度学习》课程设计.md
