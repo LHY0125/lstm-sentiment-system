@@ -175,7 +175,7 @@ docker run -d --name senti -p 8300:5000 -v "<仓库路径>\backend\artifacts:/ap
 | 文件 | 用途 |
 |------|------|
 | `docker-compose.yml` | 本地 / 通用：带 `build:`、挂载用相对路径、**只绑回环** |
-| `docker-compose.server.yml` | 腾讯云 1Panel：去掉 `build:`（服务器上只 load 镜像）、挂载写**绝对路径**（1Panel 会把编排文件收进自己的目录树，相对路径会跟着跑）、端口**默认只绑回环**（公网直连的写法留在注释里） |
+| `docker-compose.server.yml` | 腾讯云 1Panel：去掉 `build:`（服务器上只 load 镜像）、挂载写**绝对路径**（1Panel 会把编排文件收进自己的目录树，相对路径会跟着跑）、端口**默认只绑回环**（公网直连的写法留在注释里）、**额外限 CPU 并把内存上限提到 1g**（目标机无 swap，OOM 不可挽回，见该文件注释） |
 
 ```powershell
 docker compose up -d --build      # 走 docker-compose.yml

@@ -7,6 +7,9 @@
 #
 # 另有一处**刻意与同机的 english-learning-agent 那份不同**：端口只绑回环。
 # 那个服务有会话鉴权，这个一丁点都没有 —— 理由与开公网的办法都写在 ports 段。
+# 回环不是限制：**腾讯云这台上的流量本来就是经 frpc 回源到阿里云 frps、
+# 再由阿里云的 openresty 反代的**（同机 Halo/Gitea 走的是同一条链路），
+# 反代目标填 127.0.0.1:8300 即可。
 #
 # 怎么起：
 #   docker compose up -d
@@ -19,6 +22,11 @@
 #   2) 训练产物 → /opt/senti-lstm/artifacts/
 #        sudo install -d -o 10001 -g 10001 /opt/senti-lstm/artifacts
 #        # 再把 6 个 .pt + vocab.json + meta.json 拷进去
+#
+# ⚠️ **腾讯云这台没有 swap**（`free -m` 的 Swap 全 0）：内存一旦超限不是变慢，
+#    而是 OOM Killer 直接杀进程，再靠 restart 拉起、再被杀。
+#    所以既要用 mem_limit 管住自己不挤邻居，也要 cpus 管住 explain 的 101 次前向
+#    —— 后者是**串行 CPU 任务**，mem_limit 管不到它。
 
 services:
   senti-lstm:
@@ -60,10 +68,16 @@ services:
     security_opt:
       - no-new-privileges:true
 
+    # **只在无 swap 的这台上报错**：explain 一次 = 101 次串行前向（1 次基线 + 100 次遮挡），
+    # CPU 密集且单线程。4 核里钉死 1 个核，最坏情况不至于把同机的 Halo / PostgreSQL
+    # 拖到卡顿。mem_limit 只管内存，CPU 需要这一行——这是本文件与本机编排的第三处不同。
+    cpus: "1.0"
+
     # 实测（同镜像）：空跑 180.8 MiB；六个模型全部加载并跑完一次 explain 后
-    # 373.6 MiB。**不设 1g**：这台机器 3.3 GiB 内存里只有约 1.2 GiB 可用，
-    # 1g 上限会把余量压到不足以应对突发，而同机还有 Halo / Gitea / PostgreSQL。
-    mem_limit: 768m
+    # 373.6 MiB。**这里写 1g 而非本机编排的 768m**：腾讯云可用内存约 1.2 GiB，
+    # 但**没有 swap**，OOM 不可挽回，故给足约 2.7× 余量。上限同时是「不挤邻居」的
+    # 承诺——同机还有 Halo / Gitea / PostgreSQL / meilisearch 在抢内存。
+    mem_limit: 1g
 
     logging:
       # Flask 每个请求打一行日志，演示时 explain 调用密集。宿主 40 GB 盘已用
