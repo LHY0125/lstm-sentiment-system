@@ -1,15 +1,13 @@
-# 基于 LSTM 的网络评论情感分类系统 —— 腾讯云生产编排（1Panel 用）
+# 基于 LSTM 的网络评论情感分类系统 —— 生产编排（1Panel 用）
 #
-# 与仓库里的 docker-compose.yml 有两处不同，都是因为 1Panel 会把编排文件存到
-# 它自己的目录树（/opt/1panel/docker/compose/<名字>/）：
+# 单容器：Flask 同时提供 API 与前端 SPA（dist 由镜像的多阶段构建产出）。
+#
+# 与仓库里的 docker-compose.yml 有三处不同，前两处是因为 1Panel 会把编排文件
+# 存到它自己的目录树（/opt/1panel/docker/compose/<名字>/）：
 #   · 挂载写成**绝对路径**（相对路径会跟着编排文件跑到 1Panel 目录下）
 #   · 去掉 build:（服务器上没有构建上下文，镜像已经 load 好了）
-#
-# 另有一处**刻意与同机的 english-learning-agent 那份不同**：端口只绑回环。
-# 那个服务有会话鉴权，这个一丁点都没有 —— 理由与开公网的办法都写在 ports 段。
-# 回环不是限制：**腾讯云这台上的流量本来就是经 frpc 回源到阿里云 frps、
-# 再由阿里云的 openresty 反代的**（同机 Halo/Gitea 走的是同一条链路），
-# 反代目标填 127.0.0.1:8300 即可。
+# 第三处是刻意的取舍：
+#   · 端口只绑回环 —— 该服务**没有任何鉴权**（见下方 ports 段）
 #
 # 怎么起：
 #   docker compose up -d
@@ -17,16 +15,15 @@
 #
 # ⚠️ 上服务器之前，宿主上要先备好两样东西（镜像里都没有）：
 #   1) 镜像本体：
-#        docker save senti-lstm:1.0.0 | gzip > senti-lstm.tar.gz     # 本地
-#        scp senti-lstm.tar.gz tencent:/tmp/ && gunzip -c … | docker load   # 服务器
+#        docker save senti-lstm:1.0.0 -o senti-lstm-1.0.0.tar     # 本地
+#        scp senti-lstm-1.0.0.tar tencent:/tmp/ && ssh tencent "docker load -i /tmp/senti-lstm-1.0.0.tar"
 #   2) 训练产物 → /opt/senti-lstm/artifacts/
 #        sudo install -d -o 10001 -g 10001 /opt/senti-lstm/artifacts
 #        # 再把 6 个 .pt + vocab.json + meta.json 拷进去
 #
-# ⚠️ **腾讯云这台没有 swap**（`free -m` 的 Swap 全 0）：内存一旦超限不是变慢，
-#    而是 OOM Killer 直接杀进程，再靠 restart 拉起、再被杀。
-#    所以既要用 mem_limit 管住自己不挤邻居，也要 cpus 管住 explain 的 101 次前向
-#    —— 后者是**串行 CPU 任务**，mem_limit 管不到它。
+# ⚠️ 公网入口走「阿里云 ESA → 阿里云 openresty 反代 → 阿里云 frps :18300
+#    → frpc 隧道 → 本机 127.0.0.1:8300」。反代目标是**本机回环**，
+#    故这里绑回环不是限制；frpc 那条代理的 localPort 也是 8300。
 
 services:
   senti-lstm:
@@ -37,21 +34,14 @@ services:
     restart: unless-stopped
 
     ports:
-      # 宿主 8300 → 容器 5000（容器内固定 5000，镜像里 HOST/PORT 的默认值）。
-      # 8300 是**实测空闲**的：这台机器上已监听 22 25 53 80 222 443 3000 5432
-      # 7400 7700 8000 8090 8091。
-      # **只绑回环**：流量只能经 openresty 反代进来，少开一个公网入口。
-      # ⚠️ 这里与 english-learning-agent 那份 server 编排**不同**（它绑 0.0.0.0）：
+      # 宿主 8300 → 容器 5000（容器内固定 5000，是镜像里 HOST/PORT 的默认值）。
+      # **只绑回环**：流量只能经 frpc → 阿里云反代进来，少开一个公网入口。
+      # ⚠️ 这里与同机 english-learning-agent 那份**不同**（它绑 0.0.0.0）：
       #    那个服务有会话鉴权，这个**一丁点鉴权都没有** —— 任何能访问该端口的人
       #    都能提交文本让服务器真跑推理（explain 一次 = 101 次前向，CPU 密集），
-      #    而同机还跑着 Halo / Gitea / PostgreSQL，算力被吃满会波及它们
+      #    而同机还跑着 Halo / Gitea / PostgreSQL / meilisearch，算力被吃满会波及它们
       #   （mem_limit 只兜内存，不兜 CPU）。无鉴权的服务不该默认开在公网上。
       - "127.0.0.1:8300:5000"
-      #
-      # 要用 http://<公网IP>:8300 直接访问（比如给老师发链接、不方便配反代），
-      # 就把上面那行换成下面这行，并在腾讯云安全组放行 8300/TCP
-      #（容器绑定只是必要条件，不是充分条件）：
-      #     - "0.0.0.0:8300:5000"
 
     volumes:
       # 训练产物。**只读**：推理期一个字都不写。
@@ -79,14 +69,22 @@ services:
     # 承诺——同机还有 Halo / Gitea / PostgreSQL / meilisearch 在抢内存。
     mem_limit: 1g
 
+    # 显式声明健康检查（而非只靠镜像里的 HEALTHCHECK）——与本机另两份
+    # 1Panel 编排保持一致。判据只查进程活着、接口答得上话，**刻意不查模型**：
+    # 「没挂模型」与「镜像坏了」是两种状态，必须分得开。
+    healthcheck:
+      # slim 镜像里没有 curl/wget，用 python 自己发请求
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 首次启动要加载 jieba 词典，给足预热时间
+      start_period: 20s
+
     logging:
-      # Flask 每个请求打一行日志，演示时 explain 调用密集。宿主 40 GB 盘已用
-      # 64%（剩 14 GB），不封顶会一直长。
+      # Flask 每个请求打一行日志，演示时 explain 调用密集。宿主盘已用 64%
+      # （剩 14 GB），不封顶会一直长。
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-    # 健康检查**不在这里重复**：镜像里已经有 HEALTHCHECK（打 /api/health，
-    # 见 Dockerfile）。两处各写一份就是两个真相，日后必然漂移。
-    # 看当前状态：docker inspect -f '{{.State.Health.Status}}' senti-lstm
