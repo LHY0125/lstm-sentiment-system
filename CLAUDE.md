@@ -10,8 +10,11 @@
 - `backend/artifacts/` —— 训练产物（checkpoint + 词表 + 元数据），**不入库**
 - `backend/tests/` —— pytest；`backend/run_api.py` —— 后端启动入口
 - `frontend/` —— React 19 + Vite + TypeScript + Tailwind v4（pnpm + Biome）
-- `docs/superpowers/` —— 设计文档与实现计划
-- `.superpowers/sdd/` —— 逐任务的 brief / report / 审查 diff（过程记录）
+- `docs/superpowers/` —— 设计文档与实现计划（**入库**）
+- `.superpowers/sdd/` —— 开发过程记录（逐任务 brief / report / 审查 diff）。
+  **不入库**：该目录自己的 `.gitignore` 里只有一行 `*`（SDD 工具生成的哨兵），
+  故整个目录对 git 隐形——仓库里找不到是正常的，不是漏了
+- `dist/` —— `docker save` 导出的镜像 tar（约 363 MB），**不入库**（供 scp 到服务器）
 - `.venv/` —— 项目专用虚拟环境，**不要用全局解释器替代**
 
 ## 常用命令
