@@ -1,0 +1,44 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="fig22" name="图2-2 分层架构">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="900" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="cLayers" value="后端五层（上层调用下层，层间只通过函数接口通信）" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#E2E8F0;verticalAlign=top;align=left;spacingLeft=18;spacingTop=10;fontFamily=Microsoft YaHei;fontSize=22;fontStyle=1;fontColor=#334155;" vertex="1" parent="1"><mxGeometry x="30" y="30" width="820" height="500" as="geometry" /></mxCell>
+
+        <mxCell id="T1" value="接口层api.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;路由 · 参数校验 · JSON序列化 · 静态托管&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FED7AA;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="90" width="760" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="T2" value="推理层infer.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;载入产物 · 单条 / 批量预测 · 遮挡法贡献&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="176" width="760" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="T3" value="训练层train.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;训练循环 · 验证选优 · 网格实验 · 曲线绘制&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="262" width="760" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="T4" value="模型层model.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;Embedding + LSTM + Linear&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="348" width="760" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="T5" value="数据层data.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;下载 · 校验 · 分词 · 词表 · 编码&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="60" y="434" width="760" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="C1" value="config.py —— 路径与超参数常量（全项目唯一来源）" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#334155;align=left;verticalAlign=middle;spacingLeft=20;dashed=1;dashPattern=5 3;" vertex="1" parent="1">
+          <mxGeometry x="60" y="540" width="760" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C2" value="corpora.py —— 多语料下载与统一读取（旁路，不参与推理）" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#334155;align=left;verticalAlign=middle;spacingLeft=20;dashed=1;dashPattern=5 3;" vertex="1" parent="1">
+          <mxGeometry x="60" y="602" width="760" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="T1" target="T2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="T2" target="T3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="T3" target="T4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="a4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="T4" target="T5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- 说明（代替左侧竖排标注，避免旋转文字在文档里读起来别扭） -->
+        <mxCell id="note" value="箭头方向即调用方向：上层调用下层；config.py被各层共享，corpora.py只服务于数据准备" style="text;html=1;align=center;verticalAlign=top;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#64748B;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="668" width="760" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

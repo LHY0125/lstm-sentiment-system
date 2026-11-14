@@ -1,5 +1,7 @@
 # 基于 LSTM 的网络评论情感分类系统 实现计划
 
+> ⚠️ 环境注（2026-11 追加）：文中 `Python 3.13.13` 路径已失效——2026-11-08 全量迁移至 **Python 3.14.10**（`uv venv --python 3.14 --managed-python`）。本文保留为历史记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建一个前后端分离的中文评论情感分类系统——PyTorch 训练 LSTM 模型产出多组 checkpoint，Flask 提供推理与可解释性接口，React 前端提供单条分析、批量分析与参数调节界面。
