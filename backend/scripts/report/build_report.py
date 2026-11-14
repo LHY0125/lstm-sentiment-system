@@ -75,6 +75,42 @@ def _png_size(p: Path) -> tuple[int, int] | None:
             int.from_bytes(head[20:24], "big"))
 
 
+def _svg_size(p: Path) -> tuple[float, float] | None:
+    """读 SVG 根元素的 width/height（或 viewBox），拿真实宽高比。
+
+    draw.io 导出的是 `width="1062px" height="722px"`；若只有 viewBox，
+    就用 viewBox 的宽高。Word 的 wp:extent 是显示尺寸，必须按这个比例算，
+    否则 SVG 会被非等比拉伸。
+    """
+    try:
+        head = p.read_text(encoding="utf-8", errors="ignore")[:16000]
+    except OSError:
+        return None
+    # draw.io 的根 <svg> 标签带一个巨大的 content="..."（整张图的 mxfile），
+    # 所以不能先匹配完整的 <svg ...> 再取属性；width/height 在 content 之前，
+    # 直接在文件头里找第一组根属性即可。
+    mw = re.search(r'\bwidth="([\d.]+)(?:px)?"', head)
+    mh = re.search(r'\bheight="([\d.]+)(?:px)?"', head)
+    if mw and mh:
+        try:
+            w, h = float(mw.group(1)), float(mh.group(1))
+            if w > 0 and h > 0:
+                return w, h
+        except ValueError:
+            pass
+    mv = re.search(r'\bviewBox="([-\d.\s,]+)"', head)
+    if mv:
+        parts = [x for x in re.split(r"[\s,]+", mv.group(1).strip()) if x]
+        if len(parts) == 4:
+            try:
+                w, h = float(parts[2]), float(parts[3])
+                if w > 0 and h > 0:
+                    return w, h
+            except ValueError:
+                pass
+    return None
+
+
 # 中文与英文/数字之间不留空格（用户的行文习惯）。
 # 只清洗 CJK↔ASCII 的边界：纯 ASCII 内部的空间（公式、英文短语）原样保留，
 # 代码块走 raw=True 完全不动，否则会和仓库里的真实源码对不上。
@@ -314,9 +350,10 @@ SZ_CODE = 18   # 代码清单 9pt —— 再大长行就会折行，版面上很
 # ── 块渲染 ────────────────────────────────────────────────────────────
 class Renderer:
     def __init__(self) -> None:
-        self.image_rels: list[tuple[str, str]] = []   # (rId, media_name)
+        self.image_rels: list[tuple[str, str, Path]] = []   # (rId, media_name, src)
         self.next_rid = 900
         self.next_img = 100
+        self.svg_used = 0
         self.warnings: list[str] = []
         self.fig_no = {}       # 章号 -> 计数
         self.tab_no = {}
@@ -329,6 +366,64 @@ class Renderer:
             if cand.is_file():
                 return cand
         return None
+
+    def svg_for(self, png_path: Path) -> Path | None:
+        """找与 figs/x.png 同名的 drawio/x.drawio.svg（用户手动导出的矢量图）。
+
+        图源仍是 drawio 目录；figs/ 下的 png 只作为旧版 Word 的回退位图。
+        不在脚本里重新导出 SVG——用户会直接在 draw.io 里改图并重新导出。
+        """
+        name = png_path.stem + ".drawio.svg"
+        for base in (png_path.parent.parent, HERE, PROJECT):
+            cand = base / "drawio" / name
+            if cand.is_file():
+                return cand
+        return None
+
+    def image_drawing_svg(self, svg_path: Path, fallback_png: Path,
+                          width_cm: float) -> str:
+        """Word 2016+ 的 SVG 图片：PNG 回退 + asvg:svgBlip 指向矢量图。
+
+        Word 打开/导出 PDF 时优先用 svgBlip；旧版 Word 退回到 PNG。
+        SVG 与 PNG 都只被复制进 docx，不修改源文件。
+        """
+        self.next_rid += 1
+        svg_rid = f"rId{self.next_rid}"
+        self.next_rid += 1
+        png_rid = f"rId{self.next_rid}"
+        self.next_img += 1
+        base = f"image{self.next_img}"
+        svg_media = base + ".svg"
+        png_media = base + ".png"
+        self.image_rels.append((svg_rid, svg_media, svg_path))
+        self.image_rels.append((png_rid, png_media, fallback_png))
+
+        cx = int(width_cm * 360000)
+        cy = int(cx * 0.62)
+        size = _svg_size(svg_path)
+        if size and size[0] > 0:
+            cy = int(cx * size[1] / size[0])
+        return (
+            '<w:r><w:drawing>'
+            '<wp:inline distT="0" distB="0" distL="0" distR="0" '
+            'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+            f'<wp:extent cx="{cx}" cy="{cy}"/>'
+            '<wp:docPr id="%d" name="Picture %d"/>'
+            '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:nvPicPr><pic:cNvPr id="%d" name="%s"/><pic:cNvPicPr/></pic:nvPicPr>'
+            f'<pic:blipFill><a:blip r:embed="{png_rid}" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main">'
+            '<a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">'
+            f'<asvg:svgBlip r:embed="{svg_rid}"/></a:ext></a:extLst>'
+            '</a:blip>'
+            '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+            '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+        ) % (self.next_img, self.next_img, self.next_img, svg_media)
 
     def image_drawing(self, img_path: Path, width_cm: float) -> str:
         self.next_rid += 1
@@ -512,8 +607,15 @@ class Renderer:
                 if img is None:
                     self.warnings.append(f"缺图：{blk['path']}（{blk['caption']}）")
                     continue
-                out.append(para(self.image_drawing(img, blk.get("width_cm", 14)),
-                                jc="center", spacing=SP_SINGLE))
+                width = blk.get("width_cm", 14)
+                svg = self.svg_for(img) if img.suffix.lower() == ".png" else None
+                if svg is not None:
+                    # 优先用 drawio/ 下用户手动导出的矢量图；figs/*.png 只做回退
+                    self.svg_used += 1
+                    drawing = self.image_drawing_svg(svg, img, width)
+                else:
+                    drawing = self.image_drawing(img, width)
+                out.append(para(drawing, jc="center", spacing=SP_SINGLE))
                 # 图名放在图下方居中：五号宋体、单倍行距（格式规范第 4 条）
                 out.append(para(run(blk["caption"], size=SZ_HAO5, font=FONT_SONG),
                                 jc="center", spacing=SP_SINGLE))
@@ -969,7 +1071,10 @@ def main() -> int:
         if 'Extension="png"' not in ct:
             ct = ct.replace("<Default ", '<Default Extension="png" '
                             'ContentType="image/png"/><Default ', 1)
-            ct_path.write_text(ct, encoding="utf-8")
+        if 'Extension="svg"' not in ct:
+            ct = ct.replace("<Default ", '<Default Extension="svg" '
+                            'ContentType="image/svg+xml"/><Default ', 1)
+        ct_path.write_text(ct, encoding="utf-8")
 
     # ── 页眉页脚：写部件、补关系与内容类型 ──────────────────────────
     if extra_parts:
@@ -1051,7 +1156,8 @@ def main() -> int:
                 zf.write(f, f.relative_to(work).as_posix())
 
     print(f"\n已生成：{OUTPUT}  ({OUTPUT.stat().st_size:,} bytes)")
-    print(f"图片 {len(r.image_rels)} 张，章节 {len(all_chapters)} 个")
+    print(f"图片关系 {len(r.image_rels)} 条（其中 SVG 主图 {r.svg_used} 张），"
+          f"章节 {len(all_chapters)} 个")
     for w in r.warnings:
         print("  [警告]", w)
 

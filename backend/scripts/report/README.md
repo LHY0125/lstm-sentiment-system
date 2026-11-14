@@ -208,6 +208,22 @@ python "C:\Users\33644\.claude\skills\docx\scripts\office\validate.py" `
   Windows PowerShell 5.1 会把无 BOM 的 UTF-8 当 GBK 读，中文注释能把整段脚本
   解析失败（就是用 pwsh 7 跑也是这个道理，干脆不依赖编码）。
 
+### 图片嵌入：SVG 优先，PNG 回退
+
+`build_report.py` 遇到 `figs/fig_x.png` 时，会先找同名的
+`drawio/fig_x.drawio.svg`：
+
+- 找到 → 以 SVG 作为主图写进 docx（Word 2016+ 的 `asvg:svgBlip`），
+  `figs/fig_x.png` 只作为旧版 Word 的位图回退；
+- 找不到 → 仍按原来的 PNG 方式嵌入。
+
+**脚本不生成、不修改图片。** SVG 由用户在 draw.io 里改完图后手动导出，
+文件名保持 `fig_x.drawio.svg` 即可；重新跑 `build_report.py` 会自动用新图。
+
+一个 draw.io 的坑：默认导出 SVG 时，文字会被写成 `<image>` 的 base64 PNG，
+只有形状是矢量。如果希望图内文字也是矢量，导出时勾选 **Text as SVG**
+（draw.io 的 SVG 导出选项）；否则 PDF 里文字仍是位图，只是分辨率通常够用。
+
 ---
 
 ## 已知偏差
