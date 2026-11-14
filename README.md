@@ -108,12 +108,12 @@ cd backend
 
 ```powershell
 # 依赖清单见 backend/requirements.txt（含 CUDA 版 torch 的安装说明）
-uv venv .venv --python 3.13
+uv venv .venv --python 3.14
 uv pip install --python .venv\Scripts\python.exe -r backend\requirements.txt
 cd frontend; pnpm install
 ```
 
-> `uv venv --python 3.13` 假定 `uv` 能自行找到 3.13 解释器；机器上有多个版本时
+> `uv venv --python 3.14` 假定 `uv` 能自行找到 3.14 解释器；机器上有多个版本时
 > 用 `--python <解释器绝对路径>` 指定即可。若要严格复现本机实测（CUDA 12.3 构建），
 > 按 `backend/requirements.txt` 顶部的说明改用 PyTorch 官方索引安装 torch。
 

@@ -1,0 +1,70 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="fig21" name="图2-1 总体技术路线">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="590" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="legend" value="图例：实线=调用/数据流；橙色虚线=产物只读消费；左=离线训练，右=在线推理" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#64748B;" vertex="1" parent="1"><mxGeometry x="40" y="545" width="820" height="24" as="geometry" /></mxCell>
+
+        <!-- 两个阶段的虚线容器 -->
+        <mxCell id="grpL" value="① 离线训练（只写产物）" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#E2E8F0;verticalAlign=top;align=left;spacingLeft=18;spacingTop=10;fontFamily=Microsoft YaHei;fontSize=22;fontStyle=1;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="330" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="grpR" value="② 在线推理（只读产物）" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#E2E8F0;verticalAlign=top;align=left;spacingLeft=18;spacingTop=10;fontFamily=Microsoft YaHei;fontSize=22;fontStyle=1;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="470" y="60" width="330" height="390" as="geometry" />
+        </mxCell>
+
+        <!-- 左侧：训练链路 -->
+        <mxCell id="L1" value="数据集/（五个语料）" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="65" y="110" width="280" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="L2" value="数据层data.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;下载 · 校验 · 分词 · 建表 · 编码&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="65" y="190" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="L3" value="模型层model.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;Embedding + LSTM + Linear&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="65" y="272" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="L4" value="训练层train.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;6组网格 · 验证集选优&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#C7D2FE;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="65" y="354" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="L5" value="产物：*.pt + vocab.json + meta.json" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FED7AA;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="65" y="436" width="280" height="58" as="geometry" />
+        </mxCell>
+
+        <!-- 右侧：推理链路 -->
+        <mxCell id="R1" value="前端React&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;单条 / 批量 / 参数调节&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="495" y="110" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="R2" value="接口层api.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;5条REST路由&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="495" y="194" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="R3" value="推理层infer.py&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;载入产物 · 预测 · 遮挡法&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="495" y="278" width="280" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="R4" value="概率 → 阈值 → 标签&lt;br&gt;&lt;span style='font-size:13.5px;color:#4B5563'&gt;阈值只在前端，拖动不发请求&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="495" y="362" width="280" height="62" as="geometry" />
+        </mxCell>
+
+        <!-- 列内纵向箭头 -->
+        <mxCell id="eL1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="L1" target="L2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eL2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="L2" target="L3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eL3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="L3" target="L4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eL4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="L4" target="L5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="eR1" value="HTTP / JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#047857;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="R1" target="R2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eR2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="R2" target="R3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eR3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;" edge="1" parent="1" source="R3" target="R4"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- 跨阶段：产物 → 推理层 -->
+        <mxCell id="eX" value="只消费产物&lt;br&gt;不参与训练" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;dashPattern=6 4;strokeColor=#B45309;strokeWidth=1.6;endArrow=block;endFill=1;endSize=6;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#B45309;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="L5" target="R3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="465" />
+              <mxPoint x="420" y="309" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

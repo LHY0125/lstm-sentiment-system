@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="fig32" name="图3-2 LSTM 单元结构">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="870" pageHeight="540" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="cCell" value="LSTM 单元（时刻 t）" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#E2E8F0;verticalAlign=top;align=right;spacingRight=18;spacingTop=10;fontFamily=Microsoft YaHei;fontSize=22;fontStyle=1;fontColor=#334155;" vertex="1" parent="1"><mxGeometry x="10" y="0" width="840" height="470" as="geometry" /></mxCell>
+
+        <!-- 顶端更新公式 -->
+        <mxCell id="formula" value="C(t) = f ⊙ C(t-1) + i ⊙ C′(t)" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#1D4ED8;" vertex="1" parent="1">
+          <mxGeometry x="250" y="6" width="420" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- 细胞状态水平线两端 -->
+        <mxCell id="ct1" value="C(t-1)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="20" y="56" width="90" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="ct2" value="C(t)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="700" y="56" width="90" height="46" as="geometry" />
+        </mxCell>
+
+        <!-- 运算节点 -->
+        <mxCell id="nXf" value="×" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#64748B;fontFamily=Microsoft YaHei;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="162" y="61" width="36" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="nAdd" value="+" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#64748B;fontFamily=Microsoft YaHei;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="382" y="61" width="36" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="nXh" value="×" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#64748B;fontFamily=Microsoft YaHei;fontSize=18;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="592" y="282" width="36" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- 细胞状态主线（粗蓝） -->
+        <mxCell id="c1" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="ct1" target="nXf"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c2" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="nXf" target="nAdd"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c3" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="nAdd" target="ct2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="610" y="79" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 从 C(t) 分出 tanh 支路 -->
+        <mxCell id="tanhBox" value="tanh" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="545" y="140" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="branch" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=0.5;exitY=0;entryX=0.5;entryY=0;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="610" y="79" as="sourcePoint" />
+            <mxPoint x="610" y="140" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tanh2xh" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="tanhBox" target="nXh"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="hOut" value="h(t)" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=19;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="652" y="278" width="74" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="xh2h" style="html=1;strokeColor=#1D4ED8;strokeWidth=2.4;endArrow=block;endFill=1;endSize=6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="nXh" target="hOut"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- 四个门 -->
+        <mxCell id="gF" value="遗忘门f&lt;br&gt;&lt;span style='font-size:13px;color:#4B5563'&gt;σ&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FED7AA;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="105" y="200" width="150" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="gI" value="输入门i&lt;br&gt;&lt;span style='font-size:13px;color:#4B5563'&gt;σ&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FED7AA;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="265" y="200" width="150" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="gC" value="候选C′(t)&lt;br&gt;&lt;span style='font-size:13px;color:#4B5563'&gt;tanh&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#A7F3D0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="425" y="200" width="150" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="gO" value="输出门o&lt;br&gt;&lt;span style='font-size:13px;color:#4B5563'&gt;σ&lt;/span&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FED7AA;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="520" y="350" width="180" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gf2xf" style="html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="gF" target="nXf"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="gi2add" style="html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;exitX=0.5;exitY=0;entryX=0.2;entryY=1;" edge="1" parent="1" source="gI" target="nAdd">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="340" y="150" /><mxPoint x="389" y="150" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gc2add" style="html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;exitX=0.5;exitY=0;entryX=0.8;entryY=1;" edge="1" parent="1" source="gC" target="nAdd">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="500" y="168" /><mxPoint x="411" y="168" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="go2xh" style="html=1;strokeColor=#94A3B8;strokeWidth=2;endArrow=classic;endFill=1;endSize=6;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="gO" target="nXh"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- 底部说明 -->
+        <mxCell id="tip" value="细胞状态沿水平线以加法更新，梯度可近乎无衰减地回传" style="shape=note;size=14;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#FDE68A;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#92400E;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="95" y="485" width="600" height="42" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
