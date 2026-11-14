@@ -309,6 +309,15 @@ PART3 = [
                 "并把日志限制为 10MB×3，避免 explain 的密集前向拖垮同机其他服务。"
             )},
 
+            {"type": "p", "text": (
+                "系统已部署至公网环境，访问地址为"
+                "[[https://senti-lstm.liuhangyv.top|https://senti-lstm.liuhangyv.top]]。"
+                "完整源码（含训练、推理、接口与前端代码及测试）托管于 GitHub，"
+                "仓库地址为"
+                "[[https://github.com/LHY0125/lstm-sentiment-system|https://github.com/LHY0125/lstm-sentiment-system]]。"
+                "按仓库 README 的说明可在本地复现训练与推理环境。"
+            )},
+
             {"type": "h2", "text": "4.9 单元测试"},
 
             {"type": "p", "text": (

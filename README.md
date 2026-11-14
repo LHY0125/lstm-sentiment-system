@@ -2,6 +2,8 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
+**在线演示：<https://senti-lstm.liuhangyv.top>**
+
 基于 LSTM 的中文评论情感二分类系统：PyTorch 训练模型，Flask 提供推理与
 可解释性接口，React 前端提供单条分析、批量分析与参数调节。
 

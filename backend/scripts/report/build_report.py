@@ -351,6 +351,7 @@ SZ_CODE = 18   # 代码清单 9pt —— 再大长行就会折行，版面上很
 class Renderer:
     def __init__(self) -> None:
         self.image_rels: list[tuple[str, str, Path]] = []   # (rId, media_name, src)
+        self.link_rels: list[tuple[str, str]] = []          # (rId, url)
         self.next_rid = 900
         self.next_img = 100
         self.svg_used = 0
@@ -561,6 +562,54 @@ class Renderer:
         out.append(para(run("", size=SZ_HAO5), spacing=SP_SINGLE))
         return "".join(out)
 
+    # ── 正文超链接 ────────────────────────────────────────────────────
+    # 正文里用 [[URL|显示文字]] 标记可点击链接：rich_runs 把它换成
+    # <w:hyperlink r:id>，并在 document.xml.rels 里登记 TargetMode=External。
+    # 不把 URL 直接写成纯文本——纯文本在 Word 里不会自动变成链接。
+    LINK_RE = re.compile(r"\[\[([^\[\]|]+)\|([^\[\]]+)\]\]")
+
+    def hyperlink(self, url: str, label: str, *, size=None, font=None) -> str:
+        """一个可点击的超链接 run。文字用 Word 默认链接色 + 单下划线。
+
+        rPr 顺序按 CT_RPr 约束：rFonts → color → sz → u。
+        label 不做 tight_body：URL 里的 / . : 必须原样保留。
+        """
+        self.next_rid += 1
+        rid = f"rId{self.next_rid}"
+        self.link_rels.append((rid, url))
+
+        rpr = []
+        if font:
+            latin = LATIN_OF.get(font, font)
+            east = EAST_OF.get(font, font)
+            rpr.append(f'<w:rFonts w:ascii="{latin}" w:hAnsi="{latin}" '
+                       f'w:eastAsia="{east}" w:cs="{latin}" w:hint="eastAsia"/>')
+        rpr.append('<w:color w:val="0563C1"/>')
+        if size:
+            rpr.append(f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>')
+        rpr.append('<w:u w:val="single"/>')
+        return (f'<w:hyperlink r:id="{rid}" w:history="1">'
+                f'<w:r><w:rPr>{"".join(rpr)}</w:rPr>'
+                f'<w:t xml:space="preserve">{esc(label)}</w:t></w:r>'
+                '</w:hyperlink>')
+
+    def rich_runs(self, text: str, **kw) -> str:
+        """解析 `[[URL|文字]]` 并生成超链接，其余部分交给 runs_from_text。
+
+        按链接标记切段后分别清洗：链接前后的中文与 URL 之间不会因此多出空格。
+        """
+        out = []
+        pos = 0
+        for m in self.LINK_RE.finditer(text):
+            if m.start() > pos:
+                out.append(runs_from_text(text[pos:m.start()], **kw))
+            link_kw = {k: v for k, v in kw.items() if k in ("size", "font")}
+            out.append(self.hyperlink(m.group(1), m.group(2), **link_kw))
+            pos = m.end()
+        if pos < len(text):
+            out.append(runs_from_text(text[pos:], **kw))
+        return "".join(out)
+
     def render(self, blocks: list[dict], chapter: str) -> str:
         out = []
         for blk in blocks:
@@ -576,13 +625,13 @@ class Renderer:
                                 jc="left", spacing=SP_H3))
             elif t == "p":
                 jc = blk.get("align", "both")
-                out.append(para(runs_from_text(blk["text"], size=SZ_S4,
+                out.append(para(self.rich_runs(blk["text"], size=SZ_S4,
                                                font=FONT_SONG),
                                 jc=jc, spacing=SP_BODY,
                                 ind='<w:ind w:firstLineChars="200" w:firstLine="480"/>'))
             elif t == "list":
                 for i, item in enumerate(blk["items"], 1):
-                    out.append(para(runs_from_text(f"（{i}）{item}", size=SZ_S4,
+                    out.append(para(self.rich_runs(f"（{i}）{item}", size=SZ_S4,
                                                    font=FONT_SONG),
                                     jc="both", spacing=SP_BODY,
                                     ind='<w:ind w:leftChars="200" w:left="480" '
@@ -1076,6 +1125,20 @@ def main() -> int:
                             'ContentType="image/svg+xml"/><Default ', 1)
         ct_path.write_text(ct, encoding="utf-8")
 
+    # ── 超链接：补 document.xml.rels 的外部关系 ────────────────────
+    if r.link_rels:
+        rels_path = work / "word" / "_rels" / "document.xml.rels"
+        rels = rels_path.read_text(encoding="utf-8")
+        extra = [
+            f'<Relationship Id="{rid}" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+            f'relationships/hyperlink" Target="{esc(url)}" TargetMode="External"/>'
+            for rid, url in r.link_rels
+        ]
+        rels = rels.replace("</Relationships>",
+                            "".join(extra) + "</Relationships>")
+        rels_path.write_text(rels, encoding="utf-8")
+
     # ── 页眉页脚：写部件、补关系与内容类型 ──────────────────────────
     if extra_parts:
         rels_path = work / "word" / "_rels" / "document.xml.rels"
@@ -1157,7 +1220,7 @@ def main() -> int:
 
     print(f"\n已生成：{OUTPUT}  ({OUTPUT.stat().st_size:,} bytes)")
     print(f"图片关系 {len(r.image_rels)} 条（其中 SVG 主图 {r.svg_used} 张），"
-          f"章节 {len(all_chapters)} 个")
+          f"超链接 {len(r.link_rels)} 条，章节 {len(all_chapters)} 个")
     for w in r.warnings:
         print("  [警告]", w)
 
